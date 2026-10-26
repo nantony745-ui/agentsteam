@@ -1,0 +1,47 @@
+[
+  {
+    "name": "Product Launch Studio",
+    "leader": "Product Strategist",
+    "project": "atlas-product-launch",
+    "members": [
+      "Product Strategist",
+      "Experience Designer",
+      "Frontend Engineer",
+      "Quality Reviewer",
+      "Technical Writer"
+    ]
+  },
+  {
+    "name": "Research & Evidence Desk",
+    "leader": "Research Lead",
+    "project": "field-notes-research",
+    "members": [
+      "Research Lead",
+      "Evidence Analyst",
+      "Data Analyst",
+      "Technical Writer"
+    ]
+  },
+  {
+    "name": "Weekly Operations Council",
+    "leader": "Operations Lead",
+    "project": "northstar-operations",
+    "members": [
+      "Operations Lead",
+      "Data Analyst",
+      "Evidence Analyst",
+      "Technical Writer"
+    ]
+  },
+  {
+    "name": "Learning Design Workshop",
+    "leader": "Knowledge Architect",
+    "project": "learning-path-workshop",
+    "members": [
+      "Knowledge Architect",
+      "Research Lead",
+      "Experience Designer",
+      "Technical Writer"
+    ]
+  }
+]

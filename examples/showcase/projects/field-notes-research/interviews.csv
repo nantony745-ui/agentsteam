@@ -1,0 +1,7 @@
+source_id,role,excerpt,theme
+SYN-01,Coordinator,We repeat the goal when a new person joins.,context handoff
+SYN-02,Analyst,I cannot find the denominator behind this chart.,metric provenance
+SYN-03,Editor,A clear checklist reduces revision loops.,acceptance clarity
+SYN-04,Designer,Decisions are buried in long conversations.,decision traceability
+SYN-05,Facilitator,Some small tasks work well with one owner.,counterexample
+SYN-06,Researcher,Source IDs make findings easier to challenge.,evidence traceability

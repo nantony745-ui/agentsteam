@@ -1,0 +1,9 @@
+{
+  "dataset": "synthetic demonstration only",
+  "weeks": 6,
+  "orders": 630,
+  "revenue_usd": 49100,
+  "cost_usd": 28102,
+  "gross_margin_pct": 42.77,
+  "ticket_rate_pct": 17.3
+}

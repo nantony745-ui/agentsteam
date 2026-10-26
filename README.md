@@ -1,7 +1,7 @@
 <h1 align="center">Agentsteam</h1>
 
 <p align="center">
-  <strong>把本机编程 Agent 组织成一支可复用的协作团队。</strong><br>
+  <strong>把本机 Agent 组织成一支可复用的协作团队。</strong><br>
   项目与会话 · 队员身份与 Skills · 队长委派 · 并排协作 · 可选长期记忆
 </p>
 
@@ -26,27 +26,86 @@ Agentsteam 是一个在浏览器中使用的本地多智能体协作工作台。
 | 配置与权限 | 检测 Harness 能力、设置运行配置，浏览全局 Skills/MCP；权限行为受当前配置与原生 Agent 约束 |
 | 可选长期记忆 | 使用共享池或队员独立记忆库，通过 Retain、Recall、Reflect 保存、检索和归纳经验 |
 
-以下展示图基于实际界面截图，经 AI 脱敏处理；项目名称、路径、团队名称与会话内容均为通用示例。
+以下均为真实浏览器截图，未使用生图模型。展示环境包含 **4 个项目、4 支团队、10 位队员与 17 个会话**，覆盖产品设计、研究分析、经营复盘和培训方案。会话与工具事件为明确标注的合成记录；页面、CSV、报告与图表是仓库中可打开的实际文件。
+
+图片中的界面文案和内容统一使用英文，个人资料与真实业务数据未进入展示环境。英文标签通过演示专用转换脚本提供，**不代表正式产品已实现原生国际化**。演示会话展示已有前端的渲染效果，不作为真实模型执行或委派成功的证据。
+
+### 并排协作：从目标、分工到交付依据
+
+Product Launch Studio 由产品策略、体验设计、前端工程、独立评审与技术写作五个角色组成。三栏同时展示队长的范围决策、设计师的交互约束与工程师的页面交付，成员通过各自的会话保存上下文。
+
+![产品团队三栏协作](docs/images/team-workspace.png)
 
 ### 工作台：把项目、会话与执行过程放在一起
 
-从左侧项目列表切换会话，在消息区查看回复与工具活动，结合运行状态判断任务进展。文件变更与只读预览帮助你检查执行结果。
+Weekly Operations Council 展示经营复盘：从六周 CSV 核对营收、订单、毛利和工单比例，在回复里呈现指标定义、解释边界与责任分工。左侧保留四个项目及各角色历史，文件行可以打开只读预览或差异。
 
 ![Agentsteam 工作台](docs/images/workbench.png)
 
 ### 队员管理：让职责和个人技能保持稳定
 
-分别配置队员的职责、工作指引和运行环境，例如让前端工程师负责页面交互、后端工程师负责接口、文档写作员负责使用说明。每个新会话冻结当时的身份与技能快照，便于保留执行依据。
+十位队员分别定义使命、交付契约、工作步骤、证据标准和经验沉淀方法。研究负责人负责问题拆解与相反解释，证据分析员核对来源和反例，知识架构师设计学习路径；工程角色同时覆盖设计、实现与独立评审。每个新会话冻结当时的身份与技能快照。
 
 ![Agentsteam 队员管理](docs/images/employees.png)
 
 ### 团队设置：保存成员组合，按任务组织协作
 
-从已有队员中选择成员并指定队长，新建项目时应用团队模板。队长通过 MCP 委派任务，成员独立执行；你可以打开成员会话查看过程或直接交流。
+保存四种团队组合，同一队员可参与不同团队。选择成员时直接预览其职责和可发现的 Skills/MCP；新建项目应用团队模板。真实任务中由队长通过 MCP 委派，成员独立执行；目录发现结果不代表当前会话已加载或连接。
 
 ![Agentsteam 团队设置](docs/images/teams.png)
 
 详细规则见 [队员说明](EMPLOYEES.md) 与 [团队说明](TEAM_WORKSPACE.md)。
+
+### 研究与培训：把证据、反例和下一步写进交付
+
+Research & Evidence Desk 从六条虚构访谈整理证据矩阵，对“所有任务都需要多人协作”保留反例，并区分观察、推断与建议。Learning Design Workshop 将这些材料转成 90 分钟课程、练习、概念图和可观察的评估标准。
+
+![研究负责人和证据分析员并排核对材料](docs/images/research-workspace.png)
+
+<details>
+<summary>查看培训方案、个人 Skills、工具活动与文件预览</summary>
+
+![培训团队的课程与练习设计](docs/images/learning-workspace.png)
+
+个人 Skills 支持在实际队员页面预览 Markdown。图中展示可追溯交接的方法、计算示例和失效条件；个人记忆保持关闭。
+
+![队员个人 Skills 与记忆开关](docs/images/personal-skills.png)
+
+工作记录可以展开计划和工具卡片；以下活动是演示专用合成事件。
+
+![计划与工具活动](docs/images/activity-log.png)
+
+文件预览读取演示项目中的真实文件，不从会话正文伪造文件内容。
+
+![实际文件只读预览](docs/images/file-preview.png)
+
+</details>
+
+### 实际成果：可打开的页面、图表与资料目录
+
+这些成果由示例构建脚本生成，截图直接来自本地 HTML/SVG 渲染。经营仪表板是项目交付文件，工作台本身没有内置经营报表功能。
+
+![从 CSV 计算的经营仪表板](docs/images/operations-dashboard.png)
+
+![产品发布概念页面](docs/images/product-page.png)
+
+| 场景 | 团队 | 可查看的实际材料 |
+| --- | --- | --- |
+| 产品发布 | Product Launch Studio | [需求简报](examples/showcase/projects/atlas-product-launch/brief.md)、[页面源码](examples/showcase/projects/atlas-product-launch/index.html)、[发布检查清单](examples/showcase/projects/atlas-product-launch/release-checklist.md) |
+| 研究分析 | Research & Evidence Desk | [访谈 CSV](examples/showcase/projects/field-notes-research/interviews.csv)、[证据矩阵](examples/showcase/projects/field-notes-research/evidence-matrix.md)、[决策备忘录](examples/showcase/projects/field-notes-research/decision-memo.md) |
+| 经营复盘 | Weekly Operations Council | [经营 CSV](examples/showcase/projects/northstar-operations/weekly.csv)、[数据字典](examples/showcase/projects/northstar-operations/data-dictionary.md)、[指标结果](examples/showcase/projects/northstar-operations/metrics.json)、[仪表板源码](examples/showcase/projects/northstar-operations/dashboard.html) |
+| 培训设计 | Learning Design Workshop | [90 分钟议程](examples/showcase/projects/learning-path-workshop/agenda.md)、[评价量规](examples/showcase/projects/learning-path-workshop/rubric.md)、[概念图](examples/showcase/projects/learning-path-workshop/concept-map.svg) |
+
+<details>
+<summary>查看培训概念图与复现方法</summary>
+
+![实际 SVG 培训概念图](docs/images/workshop-map.png)
+
+完整角色定义见 [roles.json](examples/showcase/roles.json)，四支团队见 [teams.json](examples/showcase/teams.json)。这些文件可用于手动填写资料，不是产品已提供的批量导入接口。
+
+[演示目录说明](examples/showcase/README.md) 提供标准库构建脚本、隔离只读预览及浏览器截图方法。预览使用全新数据库与独立配置目录，拒绝 HTTP 写入，禁止启动 Agent；不需要模型、账号或长期记忆服务。
+
+</details>
 
 ## 环境要求
 
@@ -200,7 +259,8 @@ app/
   memory/        可选长期记忆
   skills/        应用内技能维护指引及引用
   static/        原生 HTML、CSS、JavaScript 与静态资源
-docs/images/     脱敏界面展示图
+docs/images/     英文演示环境真实截图与成果截图
+examples/showcase/  四类项目、队员定义、团队与只读演示工具
 scripts/         ACP 验收、PostgreSQL 与 pgvector 辅助脚本
 tests/           Python 与 Node 自动测试、手动验收脚本
 ```
