@@ -1,0 +1,27 @@
+# Copy this file to agents.toml and replace the example paths.
+# TOML literal strings do not expand environment variables or shell commands.
+# Keep enabled=true only for agents installed and authenticated on your machine.
+# The example preserves the application's existing full-access defaults.
+
+[agents.codex]
+executable = 'C:/Program Files/nodejs/node.exe'
+args = ['C:/agent-tools/node_modules/@agentclientprotocol/codex-acp/dist/index.js']
+enabled = true
+env = { INITIAL_AGENT_MODE = 'agent-full-access' }
+
+[agents.opencode]
+executable = 'C:/agent-tools/node_modules/opencode-ai/bin/opencode.exe'
+args = ['acp', '--port', '0', '--hostname', '127.0.0.1']
+enabled = true
+env = { OPENCODE_PERMISSION = '{"*":"allow"}' }
+
+[agents.codebuddy]
+executable = 'C:/Program Files/nodejs/node.exe'
+args = ['C:/agent-tools/node_modules/@tencent-ai/codebuddy-code/bin/codebuddy', '--acp', '--permission-mode', 'bypassPermissions']
+enabled = true
+env = { CODEBUDDY_IS_SANDBOX = '1' }
+
+[agents.deepseek]
+executable = 'C:/Program Files/nodejs/node.exe'
+args = ['C:/agent-tools/node_modules/deepseek-acp/lib/bin.js']
+enabled = true

@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agentsteam 工作台</title>
+  <link rel="stylesheet" href="/style.css?v=20261022.5">
+  <script src="/harness-preview.js?v=20261020.1" defer></script>
+  <script src="/skills.js?v=20261020.3" defer></script>
+  <script src="/mcp.js?v=20261020.1" defer></script>
+  <script src="/memory.js?v=20261023.1" defer></script>
+  <script src="/settings-layout.js?v=20261022.3" defer></script>
+  <script src="/settings.js?v=20261022.1" defer></script>
+  <script src="/vendor/markdown-it.umd.min.js" defer></script>
+  <script src="/layout.js" defer></script>
+  <script src="/project-git.js?v=20261022.1" defer></script>
+  <script src="/app.js?v=20261025.1" defer></script>
+  <script src="/employee-select.js?v=20261021.1" defer></script>
+  <script src="/employee-memory.js?v=20261023.2" defer></script>
+  <script src="/employees.js?v=20261023.1" defer></script>
+  <link rel="stylesheet" href="/employees.css?v=20261023.3">
+  <link rel="stylesheet" href="/teams.css?v=20261022.1">
+  <script src="/teams.js?v=20261022.2" defer></script>
+  <script src="/team-conversation.js?v=20261025.1" defer></script>
+  <script src="/team-workspace.js?v=20261025.1" defer></script>
+</head>
+<body>
+<div class="app-shell">
+  <header class="topbar">
+    <button type="button" class="icon-button panel-toggle" data-panel-toggle="left" aria-controls="sidebar" aria-expanded="true" aria-label="收起左侧栏" title="收起左侧栏"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg></button>
+    <div class="breadcrumb"><span id="project-title">Agentsteam</span><span class="breadcrumb-divider">›</span><h1 id="session-title">未选择会话</h1></div>
+    <div class="employees-topbar"><span>队员</span><span>资料与运行配置</span></div>
+    <div class="topbar-status">
+      <p id="stream-status" class="stream-status" role="status">等待选择会话</p>
+      <button id="stream-retry" type="button" hidden>重试加载</button>
+      <button id="execution-status" type="button" class="execution-status" data-panel-open="right" aria-label="执行状态，打开详情">尚无执行</button>
+      <button id="stop-button" type="button" class="stop-button" hidden>停止本轮</button>
+    </div>
+    <button type="button" class="icon-button panel-toggle" data-panel-toggle="right" aria-controls="inspector" aria-expanded="false" aria-label="展开右侧栏" title="展开右侧栏"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M15 4v16"/></svg></button>
+  </header>
+  <div class="workbench">
+    <aside id="sidebar" class="sidebar" aria-label="项目与会话">
+      <div class="panel-heading"><span class="brand">Agentsteam<span class="brand-dot">.</span></span><button class="drawer-close icon-button" type="button" data-panel-toggle="left" aria-label="关闭左侧栏">×</button></div>
+      <div class="sidebar-scroll">
+      <section class="sidebar-block new-session">
+        <form id="session-form">
+          <button type="submit" id="create-session-button" class="new-session-button"><span class="sidebar-icon sidebar-icon-new" aria-hidden="true"></span>新建会话</button>
+        </form>
+        <button type="button" id="open-employees" class="new-session-button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6m3 9v-2a6 6 0 0 0-3-5"/></svg>队员</button>
+      </section>
+      <section class="sidebar-block">
+        <h2 id="projects-heading" class="block-title sidebar-section-heading">项目</h2>
+        <div id="projects-content">
+          <nav id="project-list" aria-label="项目会话树"></nav>
+        </div>
+      </section>
+      <section class="sidebar-block sessions-block"><h2 id="recent-heading" class="block-title sidebar-section-heading">最近会话</h2><nav id="session-list" aria-label="最近主会话"><p class="empty-hint">尚无会话。</p></nav></section>
+      </div>
+      <div class="sidebar-footer"><button id="open-settings" class="settings-entry" type="button" aria-label="打开设置" title="设置"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3-1 3-3 1-2 4 2 2v4l4 3 3-1 3 1 4-3v-4l2-2-2-4-3-1-1-3Z"/><circle cx="12" cy="12" r="3"/></svg><span>设置</span></button></div>
+    </aside>
+    <div id="left-resizer" class="panel-resizer left-resizer" role="separator" tabindex="0" aria-label="调整左侧栏宽度" aria-orientation="vertical" aria-controls="sidebar" title="拖拽调整左侧栏；方向键每次调整 16px"></div>
+    <main class="conversation">
+      <p id="session-config-warning" class="session-config-warning" role="status" hidden></p>
+      <details id="session-memory-context" hidden><summary id="session-memory-label">本轮长期记忆</summary><pre id="session-memory-text"></pre></details>
+      <div class="timeline-container">
+        <section id="timeline" class="timeline" aria-label="会话消息"><div class="welcome empty-hint"><span class="welcome-mark" aria-hidden="true">✳</span><h2>从一个想法开始</h2><p>选择项目并新建会话，与 Agent 一起推进工作。</p></div></section>
+        <button id="scroll-bottom" class="scroll-bottom" type="button" hidden>↓ 回到底部</button>
+      </div>
+      <form id="message-form" class="message-form">
+        <div class="composer">
+          <label for="message-input" class="sr-only">消息输入</label>
+          <textarea id="message-input" rows="2" placeholder="发送消息…" disabled></textarea>
+          <div class="composer-toolbar"><div id="agent-choice" class="agent-choice" hidden><label class="sr-only" for="harness">使用 Agent</label><select id="harness" name="harness"><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="codebuddy">CodeBuddy</option><option value="deepseek">DeepSeek</option></select></div><span id="composer-agent" class="composer-agent">未选择 Agent</span><span class="shortcut-hint">Ctrl / ⌘ + Enter 发送</span><button type="submit" id="send-button" class="send-button" aria-label="发送消息" title="发送消息" disabled><svg id="send-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 14-7-5 14-3-6-6-1Z"/><path d="m11 13 8-8"/></svg><svg id="pause-icon" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M8 5v14M16 5v14" stroke-width="3"/></svg></button></div>
+        </div>
+        <div class="message-actions"><button type="button" id="retry-button" hidden>重试原消息</button><button type="button" id="discard-button" hidden>放弃本地重试</button></div>
+        <p id="message-error" class="form-error" role="alert"></p>
+        <div class="composer-footer"><label class="sr-only" for="project-select">新会话所属项目</label><select id="project-select" hidden><option value="">选择项目</option></select><span id="composer-project">未选择项目</span><span id="session-cwd" class="session-cwd"></span>
+          <div id="project-git" class="project-git" hidden>
+            <button id="project-git-toggle" type="button" aria-expanded="false" aria-controls="project-git-panel"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M6 7v10m12-10v2a5 5 0 0 1-5 5H6"/></svg><span id="project-git-label">检查 Git…</span><span aria-hidden="true">⌄</span></button>
+            <section id="project-git-panel" class="project-git-panel" popover="manual" aria-label="Git 状态" hidden>
+              <header><strong>Git 状态</strong><button id="project-git-refresh" type="button">刷新</button><button id="project-git-close" type="button" aria-label="关闭 Git 状态">×</button></header>
+              <p id="project-git-message" role="status"></p>
+              <dl><dt>当前目录</dt><dd id="project-git-path"></dd><dt>仓库根路径</dt><dd id="project-git-root"></dd><dt>仓库内位置</dt><dd id="project-git-relative"></dd><dt>分支 / 提交</dt><dd id="project-git-head"></dd></dl>
+              <ul id="project-git-changes" aria-label="文件变更"></ul>
+              <button id="project-git-init" type="button" hidden>初始化 Git</button>
+            </section>
+          </div>
+        </div>
+      </form>
+    </main>
+    <section id="team-workspace" hidden aria-label="团队工作区">
+      <header class="team-workspace-heading"><div><strong id="team-workspace-name"></strong> <span id="team-workspace-status"></span></div><button id="team-new-leader" type="button">新建队长会话</button></header>
+      <nav id="team-member-tabs" class="team-members" aria-label="团队成员"></nav>
+      <p id="team-workspace-error" class="team-workspace-error" role="alert"></p>
+      <div id="team-pane-grid" class="team-pane-grid"></div>
+    </section>
+    <div id="right-resizer" class="panel-resizer right-resizer" role="separator" tabindex="0" aria-label="调整右侧栏宽度" aria-orientation="vertical" aria-controls="inspector" title="拖拽调整右侧栏；方向键每次调整 16px" hidden></div>
+    <aside id="inspector" class="inspector" aria-label="会话详情" hidden>
+      <div class="panel-heading"><h2>会话详情</h2><button class="drawer-close icon-button" type="button" data-panel-toggle="right" aria-label="关闭右侧栏">×</button></div>
+      <section class="inspector-block"><h3 class="block-title">会话信息</h3><dl class="session-meta"><div><dt>会话 ID</dt><dd id="session-id">-</dd></div><div><dt>Agent</dt><dd id="session-harness">-</dd></div><div><dt>原生 Session</dt><dd id="native-id">-</dd></div></dl></section>
+      <section class="inspector-block"><h3 class="block-title">执行记录</h3><div id="run-list" class="run-list"><p class="empty-hint">尚无执行记录。</p></div></section>
+      <section id="task-changes" class="inspector-block task-changes" hidden aria-label="任务变更">
+        <div class="task-changes-heading"><h3 class="block-title">任务变更</h3><button id="task-diff-refresh" type="button">刷新</button></div>
+        <pre id="task-diff-meta" class="task-diff-meta"></pre>
+        <p id="task-diff-message" role="status"></p>
+        <div id="task-diff-content" hidden>
+        <details><summary>Git 状态</summary><pre id="task-git-status"></pre></details>
+        <details open><summary>相对基线的变更</summary><pre id="task-diff-patch"></pre></details>
+        <h4>未跟踪文件</h4><div id="task-untracked"></div>
+        <p id="task-preview-message" role="status"></p><pre id="task-file-preview"></pre>
+        </div>
+      </section>
+    </aside>
+    <div id="panel-backdrop" class="panel-backdrop" hidden></div>
+<section id="employees-view" hidden aria-label="队员管理">
+  <aside class="employees-browser" aria-label="队员选择">
+    <header class="employees-list-heading"><h1>队员 <span id="employee-count">0</span></h1><button id="employee-add" type="button" title="新增队员"><span aria-hidden="true">＋</span> 新增</button></header>
+    <nav id="employee-list" aria-label="队员列表"></nav>
+    <button id="employees-back" type="button"><span aria-hidden="true">←</span> 返回会话</button>
+  </aside>
+  <div id="employee-resizer" class="panel-resizer" role="separator" tabindex="0" aria-orientation="vertical" aria-controls="employee-list employee-detail" aria-label="调整队员列表与详情宽度" title="拖拽调整队员列表；方向键每次调整 16px"></div>
+  <div class="employee-detail-scroll">
+    <p id="employees-error" class="form-error" role="alert"></p>
+    <div id="employees-empty" class="employees-empty"><h2>创建第一位队员</h2><p>设置队员的职责与运行配置，以队员身份开展工作。</p></div>
+    <main id="employee-detail" hidden>
+      <header class="employee-heading"><div><h1 id="employee-heading-name">新增队员</h1><p><span id="employee-heading-role">设置资料与运行配置</span><span id="employee-heading-harness" class="harness-badge">待配置</span></p></div><button id="employee-delete" type="button" hidden>删除队员</button></header>
+      <form id="employee-form">
+        <section class="employee-section">
+        <h2>队员信息</h2>
+        <div class="employee-fields">
+          <label>姓名 <span class="employee-required">必填</span><input id="employee-name" required maxlength="200" placeholder="队员姓名" autocomplete="off"></label>
+          <label>团队角色<input id="employee-role" maxlength="1000" placeholder="例如：研发工程师" autocomplete="off"></label>
+          <label class="employee-field-wide" for="employee-instructions">工作指引<span class="employee-field-hint">职责范围、工作准则与持续学习的方向</span><textarea id="employee-instructions" rows="5" placeholder="描述这位队员负责什么、如何开展工作，以及需要持续积累的经验。"></textarea></label>
+        </div>
+        </section>
+        <section class="employee-section">
+        <div class="employee-section-heading"><h2>运行配置</h2><span>用于之后开始的新会话</span></div>
+        <div class="employee-runtime-controls"><label for="employee-harness">Agent Harness</label><div><select id="employee-harness"><option value="">暂不配置</option><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="codebuddy">CodeBuddy</option><option value="deepseek">DeepSeek</option></select><button id="employee-probe" type="button">检测配置</button><span id="employee-probe-status" role="status"></span></div></div>
+        <div id="employee-config-fields" class="employee-fields"></div>
+        <p class="employee-note">未设置的选项继承全局配置，保存后用于新会话。</p>
+        </section>
+        <footer class="employee-save-bar"><div><span id="employee-save-state" role="status">当前信息已保存</span><span id="employee-feedback" role="status"></span></div><button id="employee-discard" class="employee-quiet" type="button">放弃修改</button><button id="employee-save" type="submit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l4 4v14H3V3h2Zm2 0v6h10V3M7 21v-8h10v8"/></svg>保存</button></footer>
+      </form>
+      <section id="employee-session-section" class="employee-section"><div class="employee-section-heading"><h2>队员会话</h2><span>使用已保存的配置</span></div><div class="employee-session-controls"><label for="employee-project" class="sr-only">项目</label><select id="employee-project"></select><button id="employee-session" type="button">新建会话 <span aria-hidden="true">↗</span></button></div></section>
+      <section id="employee-skills-section" class="employee-section"><div class="employee-section-heading"><h2>个人 Skills</h2><button id="employee-skills-refresh" class="employee-quiet" type="button">↻ 刷新</button></div><p class="employee-note">在以下目录维护技能包，修改后新会话生效。</p><code id="employee-skills-directory"></code><div class="employee-skills-workspace"><nav id="employee-skills-list" aria-label="个人技能"></nav><div class="employee-skill-preview"><h3 id="employee-skill-title"></h3><div id="employee-skill-content" class="agent-text"></div></div></div></section>
+      <section id="employee-memory-section" class="employee-section" hidden>
+        <div class="employee-memory-heading"><div><h2>个人记忆</h2><p>跨项目与会话，持续积累这位队员的工作记忆。</p></div><label class="employee-memory-toggle"><span>使用个人记忆</span><input id="employee-memory-enabled" type="checkbox"><span class="employee-memory-track" aria-hidden="true"></span></label></div>
+        <div class="employee-memory-meta"><span id="employee-memory-status" class="employee-memory-status" role="status"></span><span id="employee-memory-threshold"></span><a href="#settings/memory">调整沉淀轮数 ↗</a></div>
+        <p id="employee-memory-error" class="form-error" role="alert"></p>
+        <div class="employee-memory-library"><div class="employee-memory-library-heading"><div><h3>记忆库</h3><p id="employee-memory-count">已保存的记忆</p></div><button id="employee-memory-refresh" type="button" aria-label="刷新记忆">↻ 刷新</button></div><div id="employee-memory-facts" class="employee-memory-grid" aria-live="polite"></div><div class="employee-memory-pagination"><button id="employee-memory-prev" type="button">上一页</button><span id="employee-memory-page">第 1 页</span><button id="employee-memory-next" type="button">下一页</button></div></div>
+      </section>
+    </main>
+  </div>
+</section>
+  </div>
+</div>
+<div id="settings-view" class="settings-shell" hidden>
+  <aside class="settings-sidebar" aria-label="设置导航">
+    <div class="settings-brand"><span class="brand">Agentsteam<span class="brand-dot">.</span></span><span>设置</span></div>
+    <nav aria-label="管理"><p class="settings-nav-label">管理</p><a id="settings-harness-nav" class="settings-nav-item" href="#settings" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="3"/><path d="M8 2v3m8-3v3M8 10h.01M16 10h.01M8 15h8"/></svg>Agent Harness</a><a id="settings-skills-nav" class="settings-nav-item" href="#settings/skills"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v15M3 4h5a4 4 0 0 1 4 2 4 4 0 0 1 4-2h5v15h-5a4 4 0 0 0-4 2 4 4 0 0 0-4-2H3Z"/></svg>Skills</a><a id="settings-mcp-nav" class="settings-nav-item" href="#settings/mcp"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3v5m8-5v5M6 8h12v3a6 6 0 0 1-12 0V8Zm6 9v4"/></svg>MCP</a>
+      <a id="settings-teams-nav" class="settings-nav-item" href="#settings/teams"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6m3 9v-2a6 6 0 0 0-3-5"/></svg>团队</a>
+      <a id="settings-memory-nav" class="settings-nav-item" href="#settings/memory"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>长期记忆</a>
+    </nav>
+    <a id="settings-return" class="settings-return" href="#workbench"><span aria-hidden="true">←</span> 返回工作台</a>
+  </aside>
+  <main class="settings-main">
+    <section id="settings-teams-panel" class="settings-page" aria-labelledby="teams-heading" hidden>
+      <header class="settings-page-heading"><h1 id="teams-heading">团队</h1><p>从已配置的队员中组建团队，在新建项目时直接使用。</p></header>
+      <div class="teams-workspace settings-split">
+        <aside class="teams-browser"><div class="teams-list-heading"><strong>已保存团队</strong><button id="team-add" type="button">＋ 新增</button></div><input id="teams-search" type="search" placeholder="搜索团队…" aria-label="搜索团队"><nav id="team-list" aria-label="团队列表"></nav></aside>
+        <div class="settings-resizer" role="separator" tabindex="0" aria-orientation="vertical" aria-label="调整团队列表与详情宽度"></div>
+        <div class="team-editor"><p id="teams-error" class="form-error" role="alert"></p><p id="teams-empty" class="settings-placeholder">创建团队，明确各位成员与队长。</p>
+          <form id="team-form"><section id="team-detail" hidden><h2>团队配置</h2><p class="settings-note">团队人数不限。工作区最多同时显示三个对话窗。</p><label for="team-name">团队名称</label><input id="team-name" maxlength="200" required placeholder="例如：产品研发组" autocomplete="off">
+            <div class="team-picker"><section><h3>选择员工</h3><input id="team-search" type="search" placeholder="搜索姓名或角色…" aria-label="搜索团队员工"><div id="team-candidates"></div></section><section><h3>已选成员 <span id="team-selected-count"></span></h3><div id="team-selected"></div></section></div>
+            <section id="team-capability" aria-label="成员能力预览"></section><footer class="settings-actions"><button id="team-delete" class="team-danger" type="button" hidden>删除团队</button><p id="team-feedback" role="status"></p><button class="settings-primary" type="submit">保存团队</button></footer>
+          </section></form>
+        </div>
+      </div>
+    </section>
+    <section id="settings-memory-panel" class="settings-page" aria-labelledby="memory-heading" hidden>
+      <header class="settings-page-heading"><h1 id="memory-heading">长期记忆</h1><p>这里管理共享记忆与全局连接。队员个人记忆在队员页面管理；保留来源与版本，执行完成不代表内容已验证。</p></header>
+      <div class="memory-workspace">
+        <p id="memory-error" class="form-error" role="alert"></p><p id="memory-runtime" role="status"></p>
+        <details><summary>连接与自动沉淀设置</summary><p>云端连接测试会发送合成测试文本。留空的密钥输入保留原配置。</p><form id="memory-config" class="memory-config"></form></details>
+        <section class="memory-card"><h2>检索与反思</h2><label for="memory-query">问题</label><input id="memory-query" maxlength="16000" placeholder="例如：之前确定的报告结构是什么？"><div class="memory-actions"><button id="memory-recall" type="button">检索记忆</button><button id="memory-reflect" type="button">综合回答</button></div><div id="memory-results" class="memory-results" aria-live="polite"></div></section>
+        <section class="memory-card"><h2>保存记忆</h2><label for="memory-input">值得长期保留的内容与依据</label><textarea id="memory-input" rows="4" maxlength="100000"></textarea><button id="memory-retain" type="button">加入沉淀队列</button></section>
+        <section class="memory-card"><h2>事实与归纳</h2><div class="memory-actions"><label for="memory-kind">类型</label><select id="memory-kind"><option value="world">外部事实</option><option value="experience">经历</option><option value="observation">归纳结果</option></select><button id="memory-facts-load" type="button">加载</button><button id="memory-prev" type="button">上一页</button><span id="memory-page">第 1 页</span><button id="memory-next" type="button">下一页</button></div><div id="memory-facts" class="memory-results"></div></section>
+        <section class="memory-card"><h2>来源与版本</h2><button id="memory-refresh" type="button">刷新状态</button><div id="memory-sources" class="memory-sources"></div>
+          <div id="memory-source-detail" hidden><h3 id="memory-source-title"></h3><button id="memory-session" type="button">打开来源会话</button><label for="memory-source-content">当前来源内容</label><textarea id="memory-source-content" rows="6" maxlength="100000"></textarea><div class="memory-actions"><button id="memory-revise" type="button">保存修订</button><button id="memory-delete" type="button">删除记忆</button></div><details><summary>历史版本与来源信息</summary><pre id="memory-source-history" tabindex="0"></pre></details></div>
+        </section>
+        <section class="memory-card"><h2>处理进度</h2><p>“事实已写入”后可检索。归纳进度按共用池展示；归纳完成不代表内容已验收。</p><div id="memory-operations"></div></section>
+      </div>
+    </section>
+    <section id="settings-harness-panel" class="settings-page" aria-labelledby="sdk-heading">
+    <header class="settings-page-heading"><h1 id="sdk-heading">Agent SDK管理</h1><p>统一管理 Agent 的连接SDK、启用状态、环境变量、配置管理与版本预检信息。</p></header>
+    <div class="settings-content settings-split">
+      <p id="settings-error" class="form-error" role="alert"></p>
+      <nav id="harness-list" class="harness-list" aria-label="Agent Harness 列表"></nav>
+      <div id="settings-harness-resizer" class="settings-resizer" role="separator" tabindex="0" aria-orientation="vertical" aria-label="调整列表与详情宽度"></div>
+      <section id="harness-detail" hidden aria-labelledby="settings-title">
+        <header class="settings-heading"><span id="settings-agent-icon"></span><div><div class="settings-agent-title"><h1 id="settings-title"></h1><span id="settings-status" role="status"></span></div><p id="settings-cwd"></p></div></header>
+        <p class="settings-note">配置由主会话与 Worker 共用，保存后从下一轮开始应用。无法热切换的项保留旧值，并在会话中提示。</p>
+        <form id="harness-settings-form">
+          <div id="harness-fields" class="harness-fields"></div>
+          <div class="settings-actions"><p id="settings-feedback" role="status"></p><button id="settings-save" class="settings-primary" type="submit" disabled>保存配置</button></div>
+        </form>
+        <p class="settings-note">模型列表由 Harness 提供；检测不会发送对话，不代表模型调用已验证。</p>
+      </section>
+    </div>
+    </section>
+    <section id="settings-skills-panel" class="settings-page" aria-labelledby="skills-heading" hidden>
+      <header class="settings-page-heading"><div class="skills-page-title"><h1 id="skills-heading">Skills</h1><span class="skills-readonly">只读预览</span></div><p>查看各 Agent Harness 的全局技能，选择 Skill 预览 Markdown 内容。</p></header>
+      <div class="skills-workspace settings-split">
+        <section class="skills-browser" aria-label="Skills 列表与筛选">
+          <div class="skills-filters">
+            <label for="skills-harness">管理对象</label><select id="skills-harness"></select>
+            <input id="skills-search" type="search" aria-label="搜索 Skills" placeholder="搜索名称 / ID / 路径…" autocomplete="off">
+          </div>
+          <div class="skills-list-heading"><span>全局 Skills</span><span id="skills-count" role="status">0</span></div>
+          <p id="skills-error" class="form-error" role="alert"></p>
+          <nav id="skills-list" aria-label="已发现的 Skills"></nav>
+          <details id="skills-locations"><summary>来源目录</summary><div id="skills-location-list"></div></details>
+          <footer class="skills-list-footer"><button id="skills-refresh" type="button">↻ 刷新</button></footer>
+        </section>
+        <div id="settings-skills-resizer" class="settings-resizer" role="separator" tabindex="0" aria-orientation="vertical" aria-label="调整列表与详情宽度"></div>
+        <section class="skills-preview" aria-label="Skill 预览">
+          <header class="skills-preview-heading"><h2 id="skill-title">选择一个 Skill</h2><span class="skills-readonly">只读</span></header>
+          <div id="skill-preview-scroll">
+            <p id="skill-placeholder" class="settings-placeholder">从左侧选择 Skill，查看内容与来源。</p>
+            <div id="skill-detail" hidden>
+              <section class="skill-info"><h3>Skill 信息</h3><p id="skill-name"></p><p id="skill-path"></p><p class="skill-discovery-note">目录发现结果不代表当前会话已加载或启用。</p></section>
+              <section id="skill-metadata-section" class="skill-info" hidden><h3>Skill 元信息</h3><pre id="skill-metadata"></pre></section>
+              <section class="skill-markdown-section"><h3>Markdown 内容</h3><div id="skill-markdown" class="agent-text"></div></section>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+    <section id="settings-mcp-panel" class="settings-page" aria-labelledby="mcp-heading" hidden>
+      <header class="settings-page-heading"><div class="skills-page-title"><h1 id="mcp-heading">MCP</h1><span class="skills-readonly">只读预览</span></div><p>查看各 Agent Harness 的全局 MCP 配置，选择服务预览连接方式与配置内容。</p></header>
+      <div class="skills-workspace settings-split">
+        <section class="skills-browser" aria-label="MCP 列表与筛选">
+          <div class="skills-filters">
+            <label for="mcp-harness">管理对象</label><select id="mcp-harness"></select>
+            <input id="mcp-search" type="search" aria-label="搜索 MCP" placeholder="搜索名称 / 传输方式 / 路径…" autocomplete="off">
+          </div>
+          <div class="skills-list-heading"><span>全局 MCP</span><span id="mcp-count" role="status">0</span></div>
+          <p id="mcp-error" class="form-error" role="alert"></p>
+          <nav id="mcp-list" aria-label="已发现的 MCP"></nav>
+          <details id="mcp-locations"><summary>来源文件</summary><div id="mcp-location-list"></div></details>
+          <footer class="skills-list-footer"><button id="mcp-refresh" type="button">↻ 刷新</button></footer>
+        </section>
+        <div id="settings-mcp-resizer" class="settings-resizer" role="separator" tabindex="0" aria-orientation="vertical" aria-label="调整列表与详情宽度"></div>
+        <section class="skills-preview" aria-label="MCP 预览">
+          <header class="skills-preview-heading"><h2 id="mcp-title">选择一个 MCP</h2><span class="skills-readonly">只读</span></header>
+          <div id="mcp-preview-scroll"><p id="mcp-note" class="skill-discovery-note"></p>
+            <p id="mcp-placeholder" class="settings-placeholder">从左侧选择 MCP，查看内容与来源。</p>
+            <div id="mcp-detail" hidden>
+              <section class="skill-info"><h3>MCP 信息</h3><p id="mcp-name"></p><div class="mcp-facts"><span>传输方式</span><strong id="mcp-transport"></strong><span>配置状态</span><strong id="mcp-enabled"></strong></div><p id="mcp-path"></p><p id="mcp-entry-error" class="form-error"></p></section>
+              <section class="skill-markdown-section"><h3>配置预览</h3><pre id="mcp-config"></pre></section>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+</div>
+<div id="session-menu" class="session-context-menu" role="menu" aria-label="会话操作" hidden><button id="session-menu-delete" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg>删除</button></div>
+<dialog id="session-delete-dialog" class="project-dialog session-delete-dialog" aria-labelledby="session-delete-title" aria-describedby="session-delete-description">
+  <form id="session-delete-form" class="project-dialog-card">
+    <h2 id="session-delete-title">删除会话</h2>
+    <p id="session-delete-description"></p>
+    <p id="session-delete-error" class="form-error" role="alert"></p>
+    <div class="project-dialog-actions"><button id="session-delete-cancel" type="button">取消</button><button id="session-delete-confirm" class="delete-confirm" type="submit">删除会话</button></div>
+  </form>
+</dialog>
+<dialog id="employee-delete-dialog" class="project-dialog session-delete-dialog" aria-labelledby="employee-delete-title" aria-describedby="employee-delete-description">
+  <form id="employee-delete-form" class="project-dialog-card">
+    <h2 id="employee-delete-title">删除队员</h2>
+    <p id="employee-delete-description"></p>
+    <p id="employee-delete-error" class="form-error" role="alert"></p>
+    <div class="project-dialog-actions"><button id="employee-delete-cancel" type="button">取消</button><button id="employee-delete-confirm" class="delete-confirm" type="submit">删除队员</button></div>
+  </form>
+</dialog>
+<dialog id="project-dialog" class="project-dialog" aria-labelledby="project-dialog-title" aria-describedby="project-dialog-help">
+  <form id="project-form" class="project-dialog-card">
+    <div class="project-dialog-heading"><h2 id="project-dialog-title">新建项目</h2><button type="button" class="icon-button" data-project-dialog-close aria-label="关闭新建项目窗口" title="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
+    <p id="project-dialog-help">添加已有项目目录，项目将以目录名命名。</p>
+    <label for="project-path">项目路径</label>
+    <div class="project-path-field"><span class="sidebar-icon sidebar-icon-folder" aria-hidden="true"></span><input id="project-path" name="path" type="text" autocomplete="off" required aria-describedby="project-path-help project-error" placeholder="例如：D:\agentdemo"><button id="project-directory-open" type="button">选择文件夹</button></div>
+    <p id="project-path-help" class="project-path-help">输入或拖入已有目录路径，也可点击“选择文件夹”。</p>
+    <section id="project-directory-browser" class="project-directory-browser" aria-label="选择项目文件夹" hidden>
+      <p id="project-directory-notice" class="project-path-help" role="status"></p>
+      <nav id="project-directory-roots" aria-label="目录起点"></nav>
+      <div class="project-directory-toolbar"><button id="project-directory-home" type="button">主目录</button><button id="project-directory-parent" type="button">上一级</button><code id="project-directory-current"></code></div>
+      <nav id="project-directory-entries" aria-label="子文件夹"></nav>
+      <div class="project-directory-actions"><button id="project-directory-cancel" type="button">取消选择</button><button id="project-directory-use" type="button">使用此文件夹</button></div>
+    </section>
+    <div class="project-team-field"><label for="project-team">使用团队</label><select id="project-team"><option value="">不使用团队</option></select><p id="project-team-summary"></p><div id="project-team-context" hidden><label for="project-context-mode">员工任务上下文</label><select id="project-context-mode"><option value="continue">默认继续该员工此前任务历史</option><option value="new">默认单开独立会话</option></select></div></div>
+    <p id="project-error" class="form-error" role="alert"></p>
+    <div class="project-dialog-actions"><button type="button" class="project-dialog-cancel" data-project-dialog-close>取消</button><button type="submit" id="project-create-submit">创建项目</button></div>
+  </form>
+</dialog>
+<dialog id="file-view-dialog" class="file-view-dialog" aria-labelledby="file-view-title" aria-describedby="file-view-message">
+  <header class="file-view-heading"><h2 id="file-view-title"></h2><button id="file-view-close" type="button" class="icon-button" aria-label="关闭文件预览">×</button></header>
+  <p id="file-view-message" role="status"></p>
+  <pre id="file-view-content" tabindex="0"></pre>
+</dialog>
+<dialog id="team-delete-dialog" class="project-dialog"><div class="project-dialog-card"><h2>删除团队</h2><p>删除保存的团队配置，已创建项目中的团队保持不变。</p><div class="project-dialog-actions"><button id="team-delete-cancel" type="button">取消</button><button id="team-delete-confirm" class="team-danger" type="button">删除团队</button></div></div></dialog>
+</body>
+</html>

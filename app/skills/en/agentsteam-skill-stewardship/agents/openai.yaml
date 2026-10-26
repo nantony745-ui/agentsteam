@@ -1,0 +1,5 @@
+interface:
+  display_name: "Experience Capture"
+  short_description: "Capture verified methods and fixes in employee skills."
+policy:
+  allow_implicit_invocation: true

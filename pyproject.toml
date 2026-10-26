@@ -1,0 +1,29 @@
+[project]
+name = "agentsteam"
+version = "0.1.0"
+description = "通过 ACP 连接编程智能体的本地多智能体协作工作台"
+license = "MIT"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "agent-client-protocol==0.12.1",
+    "aiosqlite>=0.22.1",
+    "fastapi>=0.143.2",
+    "httpx>=0.28.1",
+    "mcp>=2.3.0",
+    "uvicorn>=0.54.0",
+]
+
+[project.optional-dependencies]
+memory = [
+    "hindsight-api-slim",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]
+
+[tool.uv.sources]
+hindsight-api-slim = { git = "https://github.com/vectorize-io/hindsight.git", subdirectory = "hindsight-api-slim", rev = "0ee8b17612dd08b66bcfe216dfb7b03eeeb3fff1" }

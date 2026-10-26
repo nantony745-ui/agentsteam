@@ -1,0 +1,5 @@
+interface:
+  display_name: "经验沉淀"
+  short_description: "从已验证的方法、修复与技能缺漏中主动提炼经验，更新员工个人技能。"
+policy:
+  allow_implicit_invocation: true
