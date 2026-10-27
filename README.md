@@ -34,25 +34,25 @@ Agentsteam 是一个在浏览器中使用的本地多智能体协作工作台。
 
 Product Launch Studio 由产品策略、体验设计、前端工程、独立评审与技术写作五个角色组成。三栏同时展示队长的范围决策、设计师的交互约束与工程师的页面交付，成员通过各自的会话保存上下文。
 
-![产品团队三栏协作](docs/images/team-workspace.png)
+![产品团队三栏协作](docs/images/team-workspace.png?v=20261027)
 
 ### 工作台：把项目、会话与执行过程放在一起
 
 Weekly Operations Council 展示经营复盘：从六周 CSV 核对营收、订单、毛利和工单比例，在回复里呈现指标定义、解释边界与责任分工。左侧保留四个项目及各角色历史，文件行可以打开只读预览或差异。
 
-![Agentsteam 工作台](docs/images/workbench.png)
+![Agentsteam 工作台](docs/images/workbench.png?v=20261027)
 
 ### 队员管理：让职责和个人技能保持稳定
 
 十位队员分别定义使命、交付契约、工作步骤、证据标准和经验沉淀方法。研究负责人负责问题拆解与相反解释，证据分析员核对来源和反例，知识架构师设计学习路径；工程角色同时覆盖设计、实现与独立评审。每个新会话冻结当时的身份与技能快照。
 
-![Agentsteam 队员管理](docs/images/employees.png)
+![Agentsteam 队员管理](docs/images/employees.png?v=20261027)
 
 ### 团队设置：保存成员组合，按任务组织协作
 
 保存四种团队组合，同一队员可参与不同团队。选择成员时直接预览其职责和可发现的 Skills/MCP；新建项目应用团队模板。真实任务中由队长通过 MCP 委派，成员独立执行；目录发现结果不代表当前会话已加载或连接。
 
-![Agentsteam 团队设置](docs/images/teams.png)
+![Agentsteam 团队设置](docs/images/teams.png?v=20261027)
 
 详细规则见 [队员说明](EMPLOYEES.md) 与 [团队说明](TEAM_WORKSPACE.md)。
 
@@ -60,24 +60,24 @@ Weekly Operations Council 展示经营复盘：从六周 CSV 核对营收、订�
 
 Research & Evidence Desk 从六条虚构访谈整理证据矩阵，对“所有任务都需要多人协作”保留反例，并区分观察、推断与建议。Learning Design Workshop 将这些材料转成 90 分钟课程、练习、概念图和可观察的评估标准。
 
-![研究负责人和证据分析员并排核对材料](docs/images/research-workspace.png)
+![研究负责人和证据分析员并排核对材料](docs/images/research-workspace.png?v=20261027)
 
 <details>
 <summary>查看培训方案、个人 Skills、工具活动与文件预览</summary>
 
-![培训团队的课程与练习设计](docs/images/learning-workspace.png)
+![培训团队的课程与练习设计](docs/images/learning-workspace.png?v=20261027)
 
 个人 Skills 支持在实际队员页面预览 Markdown。图中展示可追溯交接的方法、计算示例和失效条件；个人记忆保持关闭。
 
-![队员个人 Skills 与记忆开关](docs/images/personal-skills.png)
+![队员个人 Skills 与记忆开关](docs/images/personal-skills.png?v=20261027)
 
 工作记录可以展开计划和工具卡片；以下活动是演示专用合成事件。
 
-![计划与工具活动](docs/images/activity-log.png)
+![计划与工具活动](docs/images/activity-log.png?v=20261027)
 
 文件预览读取演示项目中的真实文件，不从会话正文伪造文件内容。
 
-![实际文件只读预览](docs/images/file-preview.png)
+![实际文件只读预览](docs/images/file-preview.png?v=20261027)
 
 </details>
 
@@ -85,9 +85,9 @@ Research & Evidence Desk 从六条虚构访谈整理证据矩阵，对“所有�
 
 这些成果由示例构建脚本生成，截图直接来自本地 HTML/SVG 渲染。经营仪表板是项目交付文件，工作台本身没有内置经营报表功能。
 
-![从 CSV 计算的经营仪表板](docs/images/operations-dashboard.png)
+![从 CSV 计算的经营仪表板](docs/images/operations-dashboard.png?v=20261027)
 
-![产品发布概念页面](docs/images/product-page.png)
+![产品发布概念页面](docs/images/product-page.png?v=20261027)
 
 | 场景 | 团队 | 可查看的实际材料 |
 | --- | --- | --- |
@@ -99,7 +99,7 @@ Research & Evidence Desk 从六条虚构访谈整理证据矩阵，对“所有�
 <details>
 <summary>查看培训概念图与复现方法</summary>
 
-![实际 SVG 培训概念图](docs/images/workshop-map.png)
+![实际 SVG 培训概念图](docs/images/workshop-map.png?v=20261027)
 
 完整角色定义见 [roles.json](examples/showcase/roles.json)，四支团队见 [teams.json](examples/showcase/teams.json)。这些文件可用于手动填写资料，不是产品已提供的批量导入接口。
 
