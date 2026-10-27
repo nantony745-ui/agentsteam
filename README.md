@@ -81,31 +81,6 @@ Research & Evidence Desk 从六条虚构访谈整理证据矩阵，对“所有�
 
 </details>
 
-### 实际成果：可打开的页面、图表与资料目录
-
-这些成果由示例构建脚本生成，截图直接来自本地 HTML/SVG 渲染。经营仪表板是项目交付文件，工作台本身没有内置经营报表功能。
-
-![从 CSV 计算的经营仪表板](docs/images/operations-dashboard.png?v=20261027)
-
-![产品发布概念页面](docs/images/product-page.png?v=20261027)
-
-| 场景 | 团队 | 可查看的实际材料 |
-| --- | --- | --- |
-| 产品发布 | Product Launch Studio | [需求简报](examples/showcase/projects/atlas-product-launch/brief.md)、[页面源码](examples/showcase/projects/atlas-product-launch/index.html)、[发布检查清单](examples/showcase/projects/atlas-product-launch/release-checklist.md) |
-| 研究分析 | Research & Evidence Desk | [访谈 CSV](examples/showcase/projects/field-notes-research/interviews.csv)、[证据矩阵](examples/showcase/projects/field-notes-research/evidence-matrix.md)、[决策备忘录](examples/showcase/projects/field-notes-research/decision-memo.md) |
-| 经营复盘 | Weekly Operations Council | [经营 CSV](examples/showcase/projects/northstar-operations/weekly.csv)、[数据字典](examples/showcase/projects/northstar-operations/data-dictionary.md)、[指标结果](examples/showcase/projects/northstar-operations/metrics.json)、[仪表板源码](examples/showcase/projects/northstar-operations/dashboard.html) |
-| 培训设计 | Learning Design Workshop | [90 分钟议程](examples/showcase/projects/learning-path-workshop/agenda.md)、[评价量规](examples/showcase/projects/learning-path-workshop/rubric.md)、[概念图](examples/showcase/projects/learning-path-workshop/concept-map.svg) |
-
-<details>
-<summary>查看培训概念图与复现方法</summary>
-
-![实际 SVG 培训概念图](docs/images/workshop-map.png?v=20261027)
-
-完整角色定义见 [roles.json](examples/showcase/roles.json)，四支团队见 [teams.json](examples/showcase/teams.json)。这些文件可用于手动填写资料，不是产品已提供的批量导入接口。
-
-[演示目录说明](examples/showcase/README.md) 提供标准库构建脚本、隔离只读预览及浏览器截图方法。预览使用全新数据库与独立配置目录，拒绝 HTTP 写入，禁止启动 Agent；不需要模型、账号或长期记忆服务。
-
-</details>
 
 ## 环境要求
 
