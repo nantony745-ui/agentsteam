@@ -14,10 +14,11 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
 from app.agents.acp_client import load_argv
-from app.domain.models import FeedbackCreate, MessageCreate, PermissionAnswer, ProjectCreate, SessionCreate, UuidString
+from app.domain.models import FeedbackCreate, MessageCreate, PermissionAnswer, QuestionAnswer, ProjectCreate, SessionCreate, UuidString
 from app.db.storage import PermissionConflictError, RequestConflictError
 from app.delivery.git_delivery import diff_task, read_preview, validate_worktree
 from app.services.project_directories import list_project_directories
+from app.services.orchestrator import SessionUnavailableError
 
 
 @dataclass(frozen=True)
@@ -168,6 +169,10 @@ def create_router(stream_settings: StreamSettings) -> APIRouter:
             run = await request.app.state.service.submit(session_id, body)
         except KeyError as error:
             raise HTTPException(404, "会话不存在或已删除") from error
+        except (RequestConflictError, SessionUnavailableError):
+            raise
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
         return {"run_id": run["id"], "status": run["status"]}
 
     @router.get("/api/runs/{run_id}")
@@ -227,6 +232,15 @@ def create_router(stream_settings: StreamSettings) -> APIRouter:
             return await request.app.state.service.cancel(run_id)
         except KeyError as error:
             raise HTTPException(404, "执行不存在或已删除") from error
+
+    @router.post("/api/interactions/{question_id}/question-answer")
+    async def answer_question(question_id: UuidString, body: QuestionAnswer, request: Request):
+        try:
+            return await request.app.state.service.answer_question(question_id, body.model_dump())
+        except PermissionConflictError as error:
+            raise HTTPException(409, str(error)) from error
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
 
     @router.post("/api/interactions/{permission_id}/answer")
     async def answer(permission_id: UuidString, body: PermissionAnswer, request: Request):

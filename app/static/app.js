@@ -148,8 +148,9 @@ function currentExecution() {
 function updateExecutionStatus() {
   const run = currentExecution();
   const waiting = [...state.permissions.values()].filter(item => item.status === 'pending');
+  const questions = [...(state.context?.questions?.values() || [])].filter(item => item.status === 'pending');
   const status = $('#execution-status');
-  status.textContent = waiting.length ? `待授权 ${waiting.length}` : run ? STATUS_LABELS[run.status] || run.status : '尚无执行';
+  status.textContent = questions.length ? `待回答 ${questions.length}` : waiting.length ? `待授权 ${waiting.length}` : run ? STATUS_LABELS[run.status] || run.status : '尚无执行';
   status.dataset.status = waiting.length ? 'waiting_permission' : run?.status || '';
   const stop = $('#stop-button');
   stop.hidden = !run || (!CANCELABLE_STATUSES.has(run.status) && run.status !== 'cancel_requested');
@@ -689,6 +690,7 @@ function rememberSessionModel(row, context) {
 }
 
 function renderComposerAgent() {
+  renderCollaborationMode();
   const label = state.harness ? agentLabel(state.harness) : '未选择 Agent';
   const element = $('#composer-agent');
   element.textContent = state.modelId ? `${label} ${state.modelId}` : label;
@@ -1082,6 +1084,7 @@ function updateWorkLog(run) {
   run.querySelector('.work-label').textContent = `Worked for ${formatWorkDuration(elapsed)}`;
   const badge = run.querySelector('.work-status');
   badge.textContent = status === 'completed' ? '' : ({ submitting: '发送中', send_failed: '发送未确认', abandoned: '已放弃本地重试' })[status] || STATUS_LABELS[status] || status;
+  if ([...(state.context?.questions?.values() || [])].some(item => item.run_id === run.dataset.runId && item.status === 'pending')) badge.textContent = '等待回答';
   badge.dataset.status = status;
   run.workActive = !terminal && !['send_failed', 'abandoned'].includes(status);
   if (run.workActive && state.workTimer === null) {
@@ -1105,6 +1108,7 @@ function restoreRunAnswer(run) {
 }
 
 function settleRunContent(run) {
+  updatePlanActions(run, state.runRecords.get(run.dataset.runId)?.status === 'completed');
   restoreRunAnswer(run);
   if (!TERMINAL_STATUSES.has(state.runRecords.get(run.dataset.runId)?.status)) return;
   const items = run.querySelector('.work-items');
@@ -1505,6 +1509,7 @@ function renderPermissionCard(card, record, context) {
 
 function restorePermissions(interactions, context) {
   for (const interaction of interactions) {
+    if (interaction.kind === 'question') { applyQuestion(interaction, context); continue; }
     if (interaction.kind !== 'permission') continue;
     applyPermission({ ...interaction, uncertain: false, payload: typeof interaction.payload === 'string'
       ? JSON.parse(interaction.payload) : interaction.payload }, context);
@@ -1520,6 +1525,10 @@ async function refreshPermissions(context) {
     if (state.context !== context || context.generation !== state.generation) return;
   } while (revision !== (context.permissionRevision || 0));
   const pending = new Set(detail.interactions.filter(item => item.kind === 'permission').map(item => item.id));
+  const pendingQuestions = new Set(detail.interactions.filter(item => item.kind === 'question').map(item => item.id));
+  for (const record of context.questions?.values() || []) {
+    if (record.status === 'pending' && !pendingQuestions.has(record.id)) applyQuestion({...record, status:'resolved'}, context);
+  }
   for (const record of state.permissions.values()) {
     if (record.status === 'pending' && !pending.has(record.id)) {
       applyPermission({ ...record, status: 'resolved', submitting: false }, context);
@@ -1607,6 +1616,7 @@ function renderEvent(row, context) {
     if (row.id <= (context.configEventId || 0)) return;
     context.configEventId = row.id;
     context.configuration = row.payload;
+    renderCollaborationMode();
     const warning = $('#session-config-warning');
     if (warning) {
       warning.textContent = (row.payload.warnings || []).map(item => `${item.id}：${item.reason}`).join('；');
@@ -1640,7 +1650,7 @@ function renderEvent(row, context) {
     return;
   }
   if (!['user.message', 'agent.text', 'agent.tool', 'run.status', 'permission.requested',
-    'permission.answered', 'permission.expired', 'agent.plan', 'error'].includes(row.kind) || !row.run_id) return;
+    'permission.answered', 'permission.expired', 'question.requested', 'question.answered', 'question.expired', 'agent.plan', 'error'].includes(row.kind) || !row.run_id) return;
   const knownRun = state.runRecords.get(row.run_id);
   if (knownRun?.session_id && knownRun.session_id !== context.sessionId) return;
   const runId = row.run_id;
@@ -1683,7 +1693,23 @@ function renderEvent(row, context) {
       }
       break;
     case 'agent.plan':
-      renderPlan(row, runElement);
+      if (row.payload.plan || row.payload.sessionUpdate === 'plan_removed') {
+        renderCodexPlan(row, runElement.querySelector('.run-alerts') || runElement.querySelector('.work-items'), () => {
+          if (state.context !== context || currentPending() || isSending(context.sessionId)) return;
+          if ([...state.runRecords.values()].some(run => run.session_id === context.sessionId && !TERMINAL_STATUSES.has(run.status))) return;
+          const pending = {projectId:context.projectId, sessionId:context.sessionId,
+            requestId:crypto.randomUUID(), message:'请按以下计划执行：\n\n' + row.payload.plan.content, collaborationMode:'default'};
+          const mode = $('#collaboration-mode'); if (mode) mode.value = 'default';
+          try {sessionStorage.setItem(`agentsteam.mode.${context.sessionId}`, 'default');} catch {}
+          state.pendingBySession.set(context.sessionId, pending);
+          submitPending(pending);
+        });
+      } else renderPlan(row, runElement);
+      break;
+    case 'question.requested':
+    case 'question.answered':
+    case 'question.expired':
+      applyQuestion({id:row.payload.question_id, run_id:row.run_id, status:row.payload.status, payload:row.payload}, context);
       break;
     case 'error':
       appendError(row, runElement);
@@ -2320,6 +2346,8 @@ function updateSendButton() {
 }
 
 function updateMessageForm() {
+  const mode = $('#collaboration-mode');
+  if (mode) mode.disabled = Boolean(currentPending() || (state.context && isSending(state.context.sessionId)));
   const context = state.context;
   const ready = Boolean(context?.ready || (state.draft?.projectId && !state.draft.creating));
   const pending = currentPending();
@@ -2355,7 +2383,8 @@ async function submitPending(pending) {
     const submitted = await api(`/api/sessions/${encodeURIComponent(pending.sessionId)}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: pending.message, request_id: pending.requestId }),
+      body: JSON.stringify({ message: pending.message, request_id: pending.requestId,
+        ...(pending.collaborationMode ? {collaboration_mode:pending.collaborationMode} : {}) }),
     });
     scheduleSidebarRefresh();
     if (state.context?.sessionId === pending.sessionId) bindPendingRun(pending, submitted.run_id);
@@ -2408,6 +2437,7 @@ async function sendMessage(event) {
     sessionId: context.sessionId,
     message: text, // 保存原文，trim 仅用于校验
     requestId: crypto.randomUUID(),
+    collaborationMode: selectedCollaborationMode(),
   };
   state.pendingBySession.set(pending.sessionId, pending);
   updateMessageForm();
@@ -2416,6 +2446,7 @@ async function sendMessage(event) {
 
 async function sendDraftMessage() {
   const draft = state.draft;
+  const collaborationMode = selectedCollaborationMode();
   if (draft.creating || !draft.projectId) return;
   const text = $('#message-input').value;
   if (!text.trim()) {
@@ -2439,7 +2470,7 @@ async function sendDraftMessage() {
     }
     return;
   }
-  const pending = { projectId: draft.projectId, sessionId: created.id, message: text, requestId: crypto.randomUUID() };
+  const pending = { projectId: draft.projectId, sessionId: created.id, message: text, requestId: crypto.randomUUID(), collaborationMode };
   state.pendingBySession.set(created.id, pending);
   if (!state.sessions.some(session => session.id === created.id)) state.sessions.push({ ...created, title: '新会话' });
   if (state.draft === draft) {
@@ -2780,6 +2811,139 @@ async function init() {
   }
   startSidebarPolling();
   if (typeof HarnessSettingsUI !== 'undefined') HarnessSettingsUI.init(() => state.projectId);
+}
+
+
+function collaborationSelector(sessionId, harness, actual) {
+  const select = document.createElement('select');
+  select.className = 'collaboration-mode'; select.setAttribute('aria-label', 'Codex 工作模式');
+  select.hidden = harness !== 'codex';
+  for (const [value, label] of [['', '跟随配置'], ['default', '默认模式'], ['plan', 'Plan · 先规划']]) {
+    const option = document.createElement('option'); option.value = value; option.textContent = label; select.append(option);
+  }
+  let saved = null;
+  try {saved = sessionStorage.getItem(`agentsteam.mode.${sessionId}`);} catch {}
+  select.value = saved ?? actual ?? '';
+  select.addEventListener('change', () => {try {sessionStorage.setItem(`agentsteam.mode.${sessionId}`, select.value);} catch {}});
+  select.title = '仅影响下一条消息；Plan 使用 Codex 原生规划模式，权限设置独立保留。';
+  return select;
+}
+function renderCollaborationMode() {
+  const parent = $('#composer-agent')?.parentElement;
+  if (!parent) return;
+  const key = state.context?.sessionId || 'draft';
+  const harness = state.draft?.harness || state.harness;
+  let select = $('#collaboration-mode');
+  if (select?.dataset.sessionId !== key) {select?.remove(); select = null;}
+  if (!select) {
+    select = collaborationSelector(key, harness, state.context?.configuration?.actual?.collaboration_mode);
+    select.id = 'collaboration-mode'; select.dataset.sessionId = key;
+    parent.insertBefore(select, parent.querySelector('.shortcut-hint') || parent.querySelector('#send-button'));
+  }
+  select.hidden = harness !== 'codex';
+  const actual = state.context?.configuration?.actual?.collaboration_mode;
+  if (select.children[0]) select.children[0].textContent = actual ? `跟随配置（${actual === 'plan' ? 'Plan' : '默认'}）` : '跟随配置';
+}
+function selectedCollaborationMode() {
+  const select = $('#collaboration-mode');
+  return select && !select.hidden ? select.value : null;
+}
+function renderCodexPlan(row, parent, execute) {
+  parent.hidden = false;
+  const payload = row.payload, planId = payload.plan?.planId || payload.planId;
+  let card = [...parent.querySelectorAll('.codex-plan')].find(item => item.dataset.planId === planId);
+  if (!card) {card = document.createElement('section'); card.className = 'plan-card codex-plan'; card.dataset.planId = planId; parent.append(card);}
+  const title = document.createElement('h4'), body = document.createElement('div'); body.className = 'agent-text';
+  const removed = payload.sessionUpdate === 'plan_removed';
+  title.textContent = removed ? '计划已移除' : '计划方案';
+  card.replaceChildren(title, body);
+  if (removed) return;
+  renderMarkdown(body, payload.plan?.content || '');
+  const button = document.createElement('button'); button.type = 'button'; button.className = 'execute-plan'; button.textContent = '按此计划执行';
+  button.disabled = true; button.title = '本轮完成后，可切换到默认模式执行此计划';
+  button.addEventListener('click', execute); card.append(button);
+}
+function updatePlanActions(root, ready) {
+  for (const button of root.querySelectorAll('.execute-plan')) button.disabled = !ready;
+}
+function applyQuestion(record, context) {
+  context.permissionRevision = (context.permissionRevision || 0) + 1;
+  context.questions ??= new Map();
+  const run = ensureRun(record.run_id);
+  renderQuestionCard(record, context.questions, run.querySelector('.run-alerts') || run.querySelector('.work-items'),
+    context.sessionId, () => state.context === context && context.generation === state.generation);
+  updateExecutionStatus();
+}
+function renderQuestionCard(record, records, parent, sessionId, alive) {
+  parent.hidden = false;
+  const previous = records.get(record.id);
+  if (previous && previous.status !== 'pending' && record.status === 'pending') return;
+  if (previous?.status === 'pending' && record.status === 'pending') return;
+  const payload = typeof record.payload === 'string' ? JSON.parse(record.payload) : record.payload;
+  const merged = {...previous, ...record, payload:{...previous?.payload, ...payload}};
+  const root = previous?.root || document.createElement('section'); root.className = 'question-card'; merged.root = root;
+  records.set(record.id, merged); parent.append(root);
+  const heading = document.createElement('h4'); heading.textContent = '需要你确认'; root.replaceChildren(heading);
+  if (merged.status !== 'pending') {
+    const done = document.createElement('p'); done.textContent = merged.status === 'answered' ? '已提交回答' : '问题已结束'; root.append(done);
+    const response = typeof merged.response === 'string' ? JSON.parse(merged.response) : merged.response || merged.payload;
+    for (const [key, value] of Object.entries(response.content || {})) {
+      const spec = merged.payload.schema?.properties?.[key] || {};
+      const line = document.createElement('p'); line.textContent = `${spec.title || key}：${spec._meta?.codex?.isSecret ? '••••' : value}`; root.append(line);
+    }
+    return;
+  }
+  const schema = merged.payload.schema || {}, inputs = new Map();
+  const form = document.createElement('form'); root.append(form);
+  for (const [key, spec] of Object.entries(schema.properties || {})) {
+    const label = document.createElement('label'); label.className = 'question-field';
+    const title = document.createElement('span'); title.textContent = spec.title || key; label.append(title);
+    if (spec.description) {const help = document.createElement('small'); help.textContent = spec.description; label.append(help);}
+    const choices = spec.oneOf || (spec.enum || []).map((value, i) => ({const:value, title:spec.enumNames?.[i] || value}));
+    let input;
+    if (spec.type === 'array') {
+      input = document.createElement('select'); input.multiple = true;
+      for (const value of spec.items?.enum || []) {const option = document.createElement('option'); option.value = value; option.textContent = value; input.append(option);}
+    } else if (choices.length) {
+      input = document.createElement('select');
+      const empty = document.createElement('option'); empty.value = ''; empty.textContent = '请选择'; input.append(empty);
+      for (const choice of choices) {const option = document.createElement('option'); option.value = choice.const; option.textContent = choice.title + (choice.description ? ' — ' + choice.description : ''); input.append(option);}
+    } else {
+      input = document.createElement('input'); input.type = spec.type === 'boolean' ? 'checkbox' : ['number','integer'].includes(spec.type) ? 'number' : spec._meta?.codex?.isSecret ? 'password' : 'text';
+      if (spec.type === 'integer') input.step = '1';
+    }
+    input.required = (schema.required || []).includes(key) && spec.type !== 'boolean';
+    input.setAttribute('aria-label', spec.title || key); label.append(input); form.append(label); inputs.set(key, {input, spec});
+  }
+  const error = document.createElement('p'); error.className = 'form-error'; error.setAttribute('role','alert');
+  const send = document.createElement('button'); send.type = 'submit'; send.textContent = '提交回答';
+  const decline = document.createElement('button'); decline.type = 'button'; decline.textContent = '跳过问题';
+  form.append(send, decline, error);
+  const submit = async action => {
+    if (!alive() || merged.submitting) return;
+    merged.submitting = true; send.disabled = decline.disabled = true;
+    const content = {};
+    for (const [key, {input, spec}] of inputs) {
+      if (spec.type === 'boolean') content[key] = input.checked;
+      else if (spec.type === 'array') content[key] = [...input.selectedOptions].map(option => option.value);
+      else if (input.value !== '') content[key] = ['number','integer'].includes(spec.type) ? Number(input.value) : input.value;
+    }
+    try {
+      const result = await api(`/api/interactions/${record.id}/question-answer`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action, content})});
+      if (alive()) renderQuestionCard(result, records, parent, sessionId, alive);
+    } catch (failure) {
+      if (!alive()) return;
+      error.textContent = failure.message;
+      try {
+        const detail = await api(`/api/sessions/${sessionId}?summary=true`);
+        if (!alive()) return;
+        if (!detail.interactions.some(item => item.id === record.id)) renderQuestionCard({...merged,status:'resolved'},records,parent,sessionId,alive);
+        else send.disabled = decline.disabled = false;
+      } catch {error.textContent += '；状态待核对，请刷新页面。';}
+    } finally {merged.submitting = false;}
+  };
+  form.addEventListener('submit', event => {event.preventDefault(); submit('accept');});
+  decline.addEventListener('click', () => submit('decline'));
 }
 
 init();

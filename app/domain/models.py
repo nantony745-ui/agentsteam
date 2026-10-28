@@ -86,6 +86,12 @@ class HarnessProbeInput(HarnessSettingsInput):
 class MessageCreate(ApiInput):
     message: NonBlankText
     request_id: UuidString
+    collaboration_mode: Literal["default", "plan"] | None = None
+
+
+class QuestionAnswer(ApiInput):
+    action: Literal["accept", "decline", "cancel"]
+    content: dict[str, StrictStr | StrictBool | int | float | list[StrictStr]] = Field(default_factory=dict)
 
 
 class TaskCreate(ApiInput):

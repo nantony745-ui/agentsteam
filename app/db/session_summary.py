@@ -6,6 +6,7 @@ from typing import Any
 
 
 ACTIVITY_KINDS = (
+    "question.requested", "question.answered", "question.expired",
     "user.message", "agent.text", "agent.tool", "agent.plan", "run.status", "error",
     "permission.requested", "permission.answered", "permission.expired",
     "task.created", "task.status", "task.worktree_ready", "feedback.created", "feedback.pulled",

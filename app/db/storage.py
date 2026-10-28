@@ -103,6 +103,20 @@ async def _transition_run(
                     text = json.loads(event["payload"])
                     if text["channel"] == "message":
                         chunks.append(text["text"])
+            plans = {}
+            async with db.execute("SELECT id,payload FROM events WHERE run_id=? AND kind='agent.plan' ORDER BY id", (run_id,)) as cursor:
+                plan_events = await cursor.fetchall()
+            for event in plan_events:
+                async with db.execute("SELECT * FROM event_details WHERE event_id=? ORDER BY part", (event["id"],)) as cursor:
+                    details = [dict(part) for part in await cursor.fetchall()]
+                update = restore_payload(json.loads(event["payload"]), details)
+                plan = update.get("plan") or {}
+                if update.get("sessionUpdate") == "plan_removed":
+                    plans.pop(update.get("planId"), None)
+                elif plan.get("type") == "markdown":
+                    plans[plan["planId"]] = plan["content"]
+            if plans:
+                chunks.append("\n\n" + "\n\n".join(plans.values()))
             payload = {**payload, "result": "".join(chunks)}
     changes.update({key: payload[key] for key in ("result", "error", "stop_reason") if key in payload})
     assignments = ",".join(f"{key}=?" for key in changes)
@@ -469,7 +483,10 @@ class Storage:
             ) as cursor:
                 existing = await cursor.fetchone()
             if existing is not None:
-                if existing["prompt"] != data.message:
+                async with db.execute("SELECT payload FROM events WHERE run_id=? AND kind='user.message' ORDER BY id LIMIT 1", (existing["id"],)) as cursor:
+                    input_event = await cursor.fetchone()
+                mode = json.loads(input_event["payload"]).get("collaboration_mode") if input_event else None
+                if existing["prompt"] != data.message or mode != data.collaboration_mode:
                     raise RequestConflictError(f"request_id 已用于不同消息：{data.request_id}")
                 return dict(existing), False
             now = datetime.now(UTC).isoformat()
@@ -480,9 +497,20 @@ class Storage:
             ) as cursor:
                 run = dict(await cursor.fetchone())
             # Codeg connection.rs::record_prompt 同样在发送前等待输入记录完成。
-            await _insert_event(db, run["id"], "user.message", {"message": data.message}, now)
+            await _insert_event(db, run["id"], "user.message", {
+                "message": data.message, **({"collaboration_mode": data.collaboration_mode} if data.collaboration_mode else {}),
+            }, now)
             await _insert_event(db, run["id"], "run.status", {"from": None, "status": "queued"}, now)
             return run, True
+
+    async def run_collaboration_mode(self, run_id: str) -> str | None:
+        row = await self._fetch_one("SELECT payload FROM events WHERE run_id=? AND kind='user.message' ORDER BY id LIMIT 1", (run_id,))
+        return json.loads(row["payload"]).get("collaboration_mode") if row else None
+
+    async def expire_orphan_questions(self) -> None:
+        rows = await self._fetch_all("SELECT DISTINCT run_id FROM interactions WHERE kind='question' AND status='pending'", ())
+        for row in rows:
+            await self.expire_permissions(row["run_id"], "process_restart")
 
     async def transition_run(
         self, run_id: str, expected_statuses: Collection[RunStatus], new_status: RunStatus,
@@ -672,20 +700,41 @@ class Storage:
                      "created_at": item["created_at"]} for item in pending]
 
     async def create_permission(self, run_id: str, permission_id: str,
-                                payload: dict[str, Any]) -> dict[str, Any]:
+                                payload: dict[str, Any], kind: str = "permission") -> dict[str, Any]:
         async with self.transaction() as db:
             run = await _permission_run(db, run_id)
             now = datetime.now(UTC).isoformat()
             async with db.execute(
                 "INSERT INTO interactions (id,session_id,run_id,kind,status,payload,created_at,updated_at) "
-                "VALUES (?,?,?,'permission','pending',?,?,?) RETURNING *",
-                (permission_id, run["session_id"], run_id, json.dumps(payload, ensure_ascii=False), now, now),
+                "VALUES (?,?,?,?,'pending',?,?,?) RETURNING *",
+                (permission_id, run["session_id"], run_id, kind, json.dumps(payload, ensure_ascii=False), now, now),
             ) as cursor:
                 interaction = dict(await cursor.fetchone())
             if run["status"] == RunStatus.RUNNING:
                 await _transition_run(db, run_id, {RunStatus.RUNNING}, RunStatus.WAITING_PERMISSION, {})
-            await _insert_event(db, run_id, "permission.requested",
-                                {**payload, "permission_id": permission_id, "status": "pending"}, now)
+            await _insert_event(db, run_id, f"{kind}.requested",
+                                {**payload, f"{kind}_id": permission_id, "status": "pending"}, now)
+            return interaction
+
+    async def answer_question(self, question_id: str, response: dict) -> dict:
+        from app.agents.elicitation import validate_answer
+        async with self.transaction() as db:
+            async with db.execute("SELECT * FROM interactions WHERE id=?", (question_id,)) as cursor:
+                row = await cursor.fetchone()
+            if row is None:
+                raise KeyError(question_id)
+            if row["kind"] != "question" or row["status"] != "pending":
+                raise PermissionConflictError("问题已经回答或过期")
+            run = await _permission_run(db, row["run_id"])
+            if response["action"] == "accept":
+                validate_answer(json.loads(row["payload"])["schema"], response["content"])
+            now = datetime.now(UTC).isoformat()
+            async with db.execute("UPDATE interactions SET status='answered',response=?,updated_at=? WHERE id=? RETURNING *",
+                                  (compact(response), now, question_id)) as cursor:
+                interaction = dict(await cursor.fetchone())
+            await _insert_event(db, run["id"], "question.answered", {
+                "question_id": question_id, "status": "answered", **response}, now)
+            await self._resume_permissions(db, run["id"])
             return interaction
 
     async def answer_permission(self, permission_id: str, option_id: str) -> dict[str, Any]:
@@ -715,7 +764,7 @@ class Storage:
 
     async def _resume_permissions(self, db: aiosqlite.Connection, run_id: str) -> None:
         async with db.execute(
-            "SELECT 1 FROM interactions WHERE run_id=? AND kind='permission' AND status='pending'",
+            "SELECT 1 FROM interactions WHERE run_id=? AND kind IN ('permission','question') AND status='pending'",
             (run_id,),
         ) as cursor:
             pending = await cursor.fetchone()
@@ -726,20 +775,20 @@ class Storage:
                                  permission_id: str | None = None) -> list[str]:
         async with self.transaction() as db:
             sql = "UPDATE interactions SET status='expired',updated_at=? "
-            sql += "WHERE run_id=? AND kind='permission' AND status='pending'"
+            sql += "WHERE run_id=? AND kind IN ('permission','question') AND status='pending'"
             parameters = [datetime.now(UTC).isoformat(), run_id]
             if permission_id is not None:
                 sql += " AND id=?"
                 parameters.append(permission_id)
-            async with db.execute(sql + " RETURNING id", parameters) as cursor:
-                ids = [row["id"] for row in await cursor.fetchall()]
-            for expired_id in ids:
-                await _insert_event(db, run_id, "permission.expired", {
-                    "permission_id": expired_id, "status": "expired", "reason": reason,
+            async with db.execute(sql + " RETURNING id,kind", parameters) as cursor:
+                rows = await cursor.fetchall()
+            for row in rows:
+                await _insert_event(db, run_id, f"{row['kind']}.expired", {
+                    f"{row['kind']}_id": row["id"], "status": "expired", "reason": reason,
                 }, parameters[0])
             if permission_id is not None:
                 await self._resume_permissions(db, run_id)
-            return ids
+            return [row["id"] for row in rows]
 
     async def _fetch_all(self, sql: str, parameters: tuple) -> list[dict[str, Any]]:
         async with self._read_lock:

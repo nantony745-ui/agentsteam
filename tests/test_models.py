@@ -22,8 +22,22 @@ REQUEST_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 def test_message_preserves_prompt_and_serializes_uuid_as_string():
     message = "  检查日期解析\n    保留缩进  "
     request = MessageCreate(message=message, request_id=REQUEST_ID.upper())
-    assert json.loads(request.model_dump_json()) == {"message": message, "request_id": REQUEST_ID}
+    assert json.loads(request.model_dump_json()) == {
+        "message": message, "request_id": REQUEST_ID, "collaboration_mode": None,
+    }
     assert isinstance(request.request_id, str)
+
+
+@pytest.mark.parametrize("mode", ["default", "plan"])
+def test_message_preserves_explicit_collaboration_mode(mode):
+    request = MessageCreate(message="规划任务", request_id=REQUEST_ID, collaboration_mode=mode)
+    assert json.loads(request.model_dump_json())["collaboration_mode"] == mode
+
+
+@pytest.mark.parametrize("mode", ["agent-full-access", "unknown", 1])
+def test_message_rejects_invalid_collaboration_mode(mode):
+    with pytest.raises(ValidationError):
+        MessageCreate(message="规划任务", request_id=REQUEST_ID, collaboration_mode=mode)
 
 
 @pytest.mark.parametrize("message", ["", " ", "\t\r\n", "\u3000", None, 123])

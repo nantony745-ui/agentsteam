@@ -51,7 +51,8 @@ class Execution:
 @dataclass
 class PendingPermission:
     execution: Execution
-    future: asyncio.Future[RequestPermissionResponse]
+    future: asyncio.Future[RequestPermissionResponse | dict[str, Any]]
+    kind: str = "permission"
 
 
 @dataclass(frozen=True)
@@ -114,6 +115,15 @@ class SessionHost(Client):
             return RequestPermissionResponse(outcome=DeniedOutcome(outcome="cancelled"))
         return await self.service.request_permission(execution, tool_call, options, kwargs)
 
+    async def create_elicitation(self, message: str, mode: Any, **kwargs: Any) -> dict:
+        execution = self.runtime.active
+        if execution is None or not hasattr(mode, "requested_schema"):
+            return {"action": "cancel"}
+        if getattr(mode, "session_id", self.runtime.client.session_id) != self.runtime.client.session_id:
+            return {"action": "cancel"}
+        payload = {"message": message, "schema": mode.requested_schema.model_dump(mode="json", by_alias=True, exclude_none=True)}
+        return await self.service.request_question(execution, payload)
+
 
 class Orchestrator:
     def __init__(self, storage: Storage, client_factory: ClientFactory, internal_base_url: str) -> None:
@@ -140,6 +150,7 @@ class Orchestrator:
 
     async def start(self) -> None:
         if self.worker_dispatcher is None:
+            await self.storage.expire_orphan_questions()
             self.worker_dispatcher = asyncio.create_task(self._worker_loop(), name="worker-dispatcher")
 
     async def _worker_loop(self) -> None:
@@ -207,6 +218,8 @@ class Orchestrator:
                 raise KeyError(permission_id)
             raise PermissionConflictError("权限已经解决或不属于当前进程的活动连接")
         async with pending.execution.permission_lock:
+            if pending.kind != "permission":
+                raise ValueError("此请求需要填写问题表单")
             execution = pending.execution
             if (self.closing or execution.permissions_closed or execution.cancel_requested
                     or permission_id not in self.permissions):
@@ -220,6 +233,40 @@ class Orchestrator:
                 raise
             self._answer_future(permission_id, option_id)
             return interaction
+
+    async def request_question(self, execution: Execution, payload: dict) -> dict:
+        question_id = str(uuid4())
+        future = asyncio.get_running_loop().create_future()
+        await execution.journal.flush()
+        try:
+            async with execution.permission_lock:
+                if self.closing or execution.permissions_closed or execution.cancel_requested:
+                    return {"action": "cancel"}
+                self.permissions[question_id] = PendingPermission(execution, future, "question")
+                await execution.journal.call(lambda: self.storage.create_permission(
+                    execution.run["id"], question_id, payload, "question"))
+            return await asyncio.shield(future)
+        finally:
+            if question_id in self.permissions:
+                await self._expire_permissions(execution, "callback_ended", question_id)
+
+    async def answer_question(self, question_id: str, response: dict) -> dict:
+        pending = self.permissions.get(question_id)
+        if pending is None or pending.kind != "question":
+            raise PermissionConflictError("问题已结束或不属于当前活动连接")
+        execution = pending.execution
+        async with execution.permission_lock:
+            if self.closing or execution.permissions_closed or execution.cancel_requested or question_id not in self.permissions:
+                raise PermissionConflictError("问题已取消或过期")
+            try:
+                result = await execution.journal.call(lambda: self.storage.answer_question(question_id, response))
+            except asyncio.CancelledError:
+                result = await self.storage.get_interaction(question_id)
+                if result["status"] == "answered":
+                    self.permissions.pop(question_id).future.set_result(json.loads(result["response"]))
+                raise
+            self.permissions.pop(question_id).future.set_result(response)
+            return result
 
     def _answer_future(self, permission_id: str, option_id: str) -> None:
         pending = self.permissions.pop(permission_id)
@@ -242,7 +289,8 @@ class Orchestrator:
                    if pending.execution is execution and (permission_id is None or key == permission_id)]
             for key in ids:
                 pending = self.permissions.pop(key)
-                pending.future.set_result(RequestPermissionResponse(outcome=DeniedOutcome(outcome="cancelled")))
+                pending.future.set_result({"action": "cancel"} if pending.kind == "question" else
+                                          RequestPermissionResponse(outcome=DeniedOutcome(outcome="cancelled")))
 
     async def expire_permissions(self, run_id: str, reason: str) -> None:
         for runtime in self.sessions.values():
@@ -270,6 +318,8 @@ class Orchestrator:
 
     async def submit(self, session_id: str, data: MessageCreate) -> dict[str, Any]:
         runtime = await self._runtime(session_id)
+        if data.collaboration_mode is not None and runtime.session["harness"] != "codex":
+            raise ValueError("此工作模式仅适用于 Codex")
         async with runtime.admission:
             if runtime.active is None and runtime.client is not None and not runtime.client.reusable:
                 runtime.unavailable = True
@@ -475,6 +525,10 @@ class Orchestrator:
             return RunStatus.CANCELED, {"reason": "执行启动前取消"}
         binding = self.employees.binding(runtime.session["id"]) if self.employees else None
         execution.settings = binding["settings"] if binding else await self.storage.get_harness_settings(runtime.session["harness"])
+        mode = await self.storage.run_collaboration_mode(execution.run["id"])
+        if mode is not None:
+            execution.settings = {**execution.settings, "config_values": {
+                **execution.settings["config_values"], "collaboration_mode": mode}}
         if binding:
             self.employees.record_run(binding, execution.run["id"])
         fresh = runtime.client is None
@@ -488,6 +542,8 @@ class Orchestrator:
             execution.connection = asyncio.create_task(self._prepare_directory(runtime), name=f"directory:{execution.run['id']}")
             await execution.connection
         await self._apply_settings(runtime, execution, fresh)
+        if mode is not None and actual_values(runtime.client).get("collaboration_mode") != mode:
+            raise ValueError("Codex 未确认所选工作模式，消息未发送")
         if execution.cancel_requested:
             return RunStatus.CANCELED, {"reason": "prompt 启动前取消"}
         prompt = await self.memory.augment(execution.run) if self.memory else execution.run["prompt"]

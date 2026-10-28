@@ -8,7 +8,7 @@ from acp.exceptions import RequestError
 
 HARNESS_LABELS = {"codex": "Codex", "opencode": "OpenCode", "codebuddy": "CodeBuddy", "deepseek": "DeepSeek"}
 FIELD_SPECS = {
-    "codex": [("model", "模型"), ("reasoning_effort", "思考强度"), ("mode", "权限")],
+    "codex": [("model", "模型"), ("reasoning_effort", "思考强度"), ("mode", "权限"), ("collaboration_mode", "工作模式")],
     "opencode": [("model", "模型"), ("effort", "思考强度"), ("permission", "权限"), ("mode", "会话模式")],
     "codebuddy": [("model", "模型"), ("thought_level", "思考强度"), ("mode", "权限模式"), ("sandbox", "沙箱")],
     "deepseek": [("model", "模型"), ("reasoning", "思考强度"), ("sandbox", "文件权限"), ("session_mode", "会话模式")],

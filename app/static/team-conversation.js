@@ -4,7 +4,7 @@ class TeamConversation {
   constructor(session, member, owner) {
     this.session = session; this.member = member; this.owner = owner;
     this.cursor = 0; this.revision = 0; this.closed = false; this.loading = true;
-    this.buffer = []; this.runs = new Map(); this.permissions = new Map(); this.tools = new Map();
+    this.buffer = []; this.runs = new Map(); this.permissions = new Map(); this.tools = new Map(); this.questions = new Map();
     this.events = Promise.resolve();
     this.dirtyText = new Set(); this.textTimer = this.textFrame = null;
     this.before = null; this.pending = null;
@@ -39,9 +39,10 @@ class TeamConversation {
     });
     const toolbar = this.node('div', 'composer-toolbar');
     this.model = this.node('span', 'composer-agent', agentLabel(session.harness));
+    this.mode = collaborationSelector(session.id, session.harness, null);
     this.sendButton = this.button('↑', () => this.send()); this.sendButton.className = 'send-button'; this.sendButton.setAttribute('aria-label', '发送消息');
     this.stopButton = this.button('■', () => this.stop()); this.stopButton.title = '停止本轮'; this.stopButton.hidden = true;
-    toolbar.append(this.model, this.stopButton, this.sendButton); composer.append(this.input, toolbar);
+    toolbar.append(this.model, this.mode, this.stopButton, this.sendButton); composer.append(this.input, toolbar);
     this.error = this.node('p', 'form-error'); this.error.setAttribute('role', 'alert');
     this.retry = this.button('重试原消息', () => this.send()); this.retry.hidden = true;
     this.abandon = this.button('放弃本地重试', () => {this.clearPending();}); this.abandon.hidden = true;
@@ -80,6 +81,7 @@ class TeamConversation {
     for (const row of page.metadata) await this.apply(row);
     this.cursor = page.high_watermark; this.before = page.before; this.older.hidden = !page.before;
     for (const interaction of detail.interactions) if (interaction.kind === 'permission') this.permission(interaction);
+    for (const interaction of detail.interactions) if (interaction.kind === 'question') this.question(interaction);
     const buffered = this.buffer.splice(0).sort((a,b) => a.id-b.id);
     this.loading = false;
     await Promise.all(buffered.map(row => this.receive(row)));
@@ -159,7 +161,7 @@ class TeamConversation {
     if (this.closed || row.session_id !== this.session.id) return;
     if (row.kind === 'session.model') {this.model.textContent = `${agentLabel(this.session.harness)} ${row.payload.model_id || row.payload.model || ''}`; return;}
     if (row.kind === 'session.config') {this.warning.textContent = (row.payload.warnings || []).map(item => item.reason).join('；'); return;}
-    if (!row.run_id || !['user.message','agent.text','agent.tool','agent.plan','error','run.status','permission.requested','permission.answered','permission.expired'].includes(row.kind)) return;
+    if (!row.run_id || !['user.message','agent.text','agent.tool','agent.plan','error','run.status','permission.requested','permission.answered','permission.expired','question.requested','question.answered','question.expired'].includes(row.kind)) return;
     const run = this.ensureRun(row.run_id, {created_at:this.runs.get(row.run_id)?.record.created_at || row.created_at});
     if (run.seen.has(row.id)) return;
     run.seen.add(row.id);
@@ -191,9 +193,20 @@ class TeamConversation {
         if (!tool.loadingDetails) this.refreshToolDetails(tool);
       } else if (tool.loaded && !tool.remoteDetails) tool.root.querySelector('pre').textContent = JSON.stringify(tool.data, null, 2).slice(0,16000);
     } else if (row.kind === 'agent.plan') {
+      if (payload.plan || payload.sessionUpdate === 'plan_removed') {
+        renderCodexPlan(row, run.alerts, () => {
+          if (this.closed || this.activeRun || this.pending || this.sending) return;
+          this.pending = {message:'请按以下计划执行：\n\n' + payload.plan.content, request_id:crypto.randomUUID(), collaboration_mode:'default'};
+          try {sessionStorage.setItem(this.pendingKey(),JSON.stringify(this.pending));} catch {}
+          this.mode.value = 'default'; this.send();
+          try {sessionStorage.setItem(`agentsteam.mode.${this.session.id}`, 'default');} catch {}
+        });
+      } else {
       let plan = run.items.querySelector('.plan-card'); if (!plan) {plan = this.node('div', 'plan-card'); run.items.append(plan);}
       plan.replaceChildren(...(payload.entries || []).map(item => this.node('p', '', `${item.status === 'completed' ? '✓' : '○'} ${item.content}`)));
+      }
     } else if (row.kind === 'error') run.alerts.append(this.node('p', 'run-error', payload.message || payload.error || '执行错误'));
+    else if (row.kind.startsWith('question.')) this.question({id:payload.question_id, run_id:row.run_id, status:payload.status, payload});
     else if (row.kind.startsWith('permission.')) this.permission({id:payload.permission_id, run_id:row.run_id, status:payload.status, payload});
     else if (row.kind === 'run.status') {
       Object.assign(run.record, payload);
@@ -274,6 +287,9 @@ class TeamConversation {
     } else root.append(this.node('span', '', merged.uncertain ? '状态待核对，请刷新后处理' : merged.status === 'answered' ? '已回答' : '已结束'));
     this.permissions.set(record.id, merged); this.ensureRun(record.run_id).alerts.append(root);
   }
+  question(record) {
+    renderQuestionCard(record, this.questions, this.ensureRun(record.run_id).alerts, this.session.id, () => !this.closed);
+  }
   async fileChanges(run) {
     if (run.loadingFiles) return; run.loadingFiles = true;
     try {
@@ -300,12 +316,15 @@ class TeamConversation {
     let active = null;
     for (const run of this.runs.values()) {
       const start = Date.parse(run.record.created_at), end = Date.parse(run.record.finished_at) || Date.now();
-      const summary = `Worked for ${Number.isFinite(start) ? formatWorkDuration(Math.max(0,end-start)) : '…'} · ${STATUS_LABELS[run.record.status] || '加载中'}`;
+      const waiting = [...this.questions.values()].some(item => item.run_id === run.record.id && item.status === 'pending');
+      const summary = `Worked for ${Number.isFinite(start) ? formatWorkDuration(Math.max(0,end-start)) : '…'} · ${waiting ? '等待回答' : STATUS_LABELS[run.record.status] || '加载中'}`;
       if (run.summary.textContent !== summary) run.summary.textContent = summary;
       if (['running','waiting_permission','cancel_requested'].includes(run.record.status)) active = run;
       else if (!active && run.record.status === 'queued') active = run;
     }
     this.activeRun = active; this.stopButton.hidden = !active;
+    for (const run of this.runs.values()) updatePlanActions(run.root, run.record.status === 'completed' && !active && !this.loading && !this.sending && !this.pending);
+    this.mode.disabled = Boolean(this.pending || this.sending);
     this.sendButton.disabled = this.loading || Boolean(this.sending);
     const sessions = this.owner.roster.sessions.filter(item => item.employee_id === this.member.profile.employee_id);
     const signature = JSON.stringify(sessions.map(item => [item.id,item.title]));
@@ -319,6 +338,7 @@ class TeamConversation {
     if (!this.pending) {
       if (!this.input.value.trim()) return;
       this.pending = {message:this.input.value, request_id:crypto.randomUUID()};
+      if (this.session.harness === 'codex' && this.mode.value) this.pending.collaboration_mode = this.mode.value;
       try {sessionStorage.setItem(this.pendingKey(),JSON.stringify(this.pending));} catch {}
     }
     const submitted = this.pending;

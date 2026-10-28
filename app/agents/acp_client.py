@@ -287,7 +287,7 @@ class AcpClient:
             self.proc = await spawn_process(self.argv, cwd, self.record, self.env)
             self._drain = asyncio.create_task(drain_stderr(self.proc.stderr, self._process_record))
             self.conn = connect_to_agent(self.host, self.proc.stdin, self.proc.stdout,
-                                         observers=[self._observe])
+                                         observers=[self._observe], use_unstable_protocol=self.harness == "codex")
             self._watch = asyncio.create_task(self._watch_process())
             await self._handshake(cwd, mcp_servers)
             self._usable = True
@@ -301,7 +301,8 @@ class AcpClient:
         self.record("stage", {"stage": "initialize", "status": "started"})
         async with asyncio.timeout(60):
             initialized = await self.conn.initialize(
-                protocol_version=PROTOCOL_VERSION, client_capabilities=ClientCapabilities(),
+                protocol_version=PROTOCOL_VERSION, client_capabilities=ClientCapabilities.model_validate(
+                    {"elicitation": {"form": {}}, "plan": {}} if self.harness == "codex" else {}),
                 client_info=Implementation(name="agentsteam", version="0.1.0"),
             )
         self.record("initialize", initialized.model_dump(mode="json", by_alias=True))
