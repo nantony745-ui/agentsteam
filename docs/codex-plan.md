@@ -28,3 +28,7 @@ node tests/verify_codex_plan_browser.cjs
 2026-10-28 发布副本同步复验：在 `comeup_online` 按 README 设置 `NO_PROXY=127.0.0.1,localhost` 后，全量 Python 首轮为 558 项通过、1 项失败；唯一失败是旧消息序列化断言未包含新增的 `collaboration_mode`。更新该断言并新增 5 项模式取值用例后，两份目录的消息模型与 Plan 协议测试各 55 项通过。修正后未重复整套 Python 回归。发布副本前端 167 项与 Chromium 验收通过，无浏览器异常，编译、语法、diff 检查通过。
 
 浏览器验收默认使用当前仓库 `.venv/Scripts/python.exe`；复用已有环境时可通过 `AGENTSTEAM_TEST_PYTHON` 指定解释器路径。发布副本保留配置模板，实际 `agents.toml` 不纳入 Git。
+
+2026-10-28 提问卡片更新：共享问题卡改为浅绿色标题、整行可选卡片、推荐徽标、逐题导航与已回答摘要。必填问题完成后才允许提交；Codex user_note 按 questionId 放入所属题目。参照 Codeg `src/components/chat/ask-question-card.tsx` 的 `AskQuestionCard` 和 `src/lib/ask-question.ts` 的 `splitRecommended`，使用现有原生 JavaScript/CSS 实现，保留 HTTP 回答协议及原始选项值，无新增依赖。
+
+本轮开发目录验证：前端 168 项、Plan 协议 4 项通过；Chromium 验收覆盖刷新恢复、键盘方向键选择、普通会话及团队窗格回答后执行、桌面和 390px 窄屏，无脚本异常。截图已检查。未调用真实付费模型。

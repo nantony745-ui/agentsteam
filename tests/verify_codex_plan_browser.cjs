@@ -25,11 +25,20 @@ async function main(){
     await evaluate(`selectProject('${project.id}'); selectSession('${session.id}')`);
     await until(()=>evaluate("!!document.querySelector('#collaboration-mode') && state.context?.ready"));
     await evaluate("document.querySelector('#collaboration-mode').value='plan';document.querySelector('#collaboration-mode').dispatchEvent(new Event('change'));document.querySelector('#message-input').value='帮我规划';document.querySelector('#message-form').requestSubmit()");
-    await until(()=>evaluate("!!document.querySelector('.question-card select')"));
+    await until(()=>evaluate("!!document.querySelector('.question-card input[type=radio]')"));
     assert.equal(await evaluate("document.querySelector('.question-card').checkVisibility()"),true);
-    await send('Page.reload');await until(()=>evaluate("!!document.querySelector('.question-card select')"));
+    assert.equal(await evaluate("document.querySelector('.question-submit').disabled"),true);
+    const pendingDesktop=await send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(directory,'question-desktop.png'),Buffer.from(pendingDesktop.data,'base64'));
+    await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+    assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true);
+    const pendingMobile=await send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(directory,'question-mobile.png'),Buffer.from(pendingMobile.data,'base64'));
+    await send('Page.reload');await until(()=>evaluate("!!document.querySelector('.question-card input[type=radio]')"));
     assert.equal(await evaluate("document.querySelector('#collaboration-mode').value"),'plan');
-    await evaluate("document.querySelector('.question-card select').value='A';document.querySelector('.question-card input').value='保留我的说明';document.querySelector('.question-card form').requestSubmit()");
+    await evaluate("document.querySelector('.question-card input[type=radio]').focus()");
+    await send('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowDown',code:'ArrowDown',windowsVirtualKeyCode:40});
+    await send('Input.dispatchKeyEvent',{type:'keyUp',key:'ArrowDown',code:'ArrowDown',windowsVirtualKeyCode:40});
+    assert.equal(await evaluate("document.querySelector('.question-card input[type=radio]:checked').value"),'B');
+    await evaluate("document.querySelector('.question-card input[type=radio]').click();document.querySelector('.question-card textarea').value='保留我的说明';document.querySelector('.question-card textarea').dispatchEvent(new Event('input'));document.querySelector('.question-next').click();document.querySelector('.question-card form').requestSubmit()");
     await until(()=>evaluate("!!document.querySelector('.execute-plan:not(:disabled)')"));
     assert.equal(await evaluate("document.querySelector('.execute-plan').checkVisibility()"),true);
     assert.equal(await evaluate("document.querySelector('.codex-plan').textContent.includes('方案 A')"),true);
@@ -45,8 +54,8 @@ async function main(){
     await until(()=>evaluate('!planPane.loading'));
     await evaluate("planPane.mode.value='plan';planPane.input.value='团队规划';planPane.send()");
     // 项目 SSE 使用具名事件；显式补拉也覆盖事件读取与展示。
-    await until(async()=>{await evaluate(`api('/api/events?project_id=${project.id}&session_id=${second.id}&after_event_id='+planPane.cursor).then(async rows=>{for(const row of rows)await planPane.receive(row)})`);return evaluate("!!planPane.root.querySelector('.question-card select')");});
-    await evaluate("planPane.root.querySelector('.question-card select').value='A';planPane.root.querySelector('.question-card form').requestSubmit()");
+    await until(async()=>{await evaluate(`api('/api/events?project_id=${project.id}&session_id=${second.id}&after_event_id='+planPane.cursor).then(async rows=>{for(const row of rows)await planPane.receive(row)})`);return evaluate("!!planPane.root.querySelector('.question-card input[type=radio]')");});
+    await evaluate("planPane.root.querySelector('.question-card input[type=radio]').click();planPane.root.querySelector('.question-next').click();planPane.root.querySelector('.question-card form').requestSubmit()");
     await until(async()=>{await evaluate(`api('/api/events?project_id=${project.id}&session_id=${second.id}&after_event_id='+planPane.cursor).then(async rows=>{for(const row of rows)await planPane.receive(row)})`);return evaluate("!!planPane.root.querySelector('.execute-plan:not(:disabled)')");});
     assert.deepEqual(browserErrors,[]);console.log(JSON.stringify({result:'passed',directory,browserErrors}));
   }finally{socket?.close();chrome?.kill();server.kill();if(errors.length)console.error(errors.join(''));}

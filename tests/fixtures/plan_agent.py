@@ -38,7 +38,7 @@ for line in sys.stdin:
         send({"id": "question-1", "method": "elicitation/create", "params": {
             "sessionId": "wire-plan", "mode": "form", "message": "Codex needs your input to continue.",
             "requestedSchema": {"type": "object", "properties": {
-                "choice": {"type": "string", "title": "选择方案", "oneOf": [{"const": "A", "title": "方案 A"}, {"const": "B", "title": "方案 B"}]},
+                "choice": {"type": "string", "title": "选择方案", "oneOf": [{"const": "A", "title": "方案 A (Recommended)", "description": "沿用现有结构，先完成核心流程，再验证关键路径。"}, {"const": "B", "title": "方案 B", "description": "先拆分模块，再逐步实现与验证。"}]},
                 "note": {"type": "string", "title": "补充说明"}}, "required": ["choice"]}}})
         continue
     elif method == "session/cancel":

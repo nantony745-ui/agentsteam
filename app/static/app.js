@@ -2874,6 +2874,48 @@ function applyQuestion(record, context) {
     context.sessionId, () => state.context === context && context.generation === state.generation);
   updateExecutionStatus();
 }
+function questionNode(tag, className, text) {
+  const node = document.createElement(tag); node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+}
+function questionField(key, spec, requestId, required) {
+  const field = questionNode('fieldset', 'question-field');
+  const legend = questionNode('legend', 'question-title', spec.title || key); field.append(legend);
+  if (spec.description) field.append(questionNode('p', 'question-description', spec.description));
+  const choices = spec.oneOf || (spec.enum || spec.items?.enum || []).map((value, i) => ({const:value, title:spec.enumNames?.[i] || value}));
+  const controls = [];
+  let value;
+  if (choices.length) {
+    const list = questionNode('div', 'question-options'); field.append(list);
+    choices.forEach((choice, index) => {
+      const label = questionNode('label', 'question-option');
+      const input = document.createElement('input'); input.type = spec.type === 'array' ? 'checkbox' : 'radio';
+      input.name = `question-${requestId}-${key}`; input.value = choice.const;
+      const marker = questionNode('span', 'question-option-index', String(index + 1)); marker.setAttribute('aria-hidden','true');
+      const copy = questionNode('span', 'question-option-copy');
+      const rawTitle = String(choice.title || choice.const);
+      const match = rawTitle.match(/^(.+?)\s*(?:\(recommended\)|（推荐）|\(推荐\))\s*$/i);
+      const title = questionNode('span', 'question-option-title', match ? match[1] : rawTitle);
+      copy.append(title);
+      if (match) title.append(questionNode('span', 'question-recommended', '推荐'));
+      if (choice.description) copy.append(questionNode('span', 'question-option-description', choice.description));
+      label.append(input, marker, copy); list.append(label); controls.push(input);
+    });
+    value = () => spec.type === 'array' ? controls.filter(item => item.checked).map(item => item.value) : controls.find(item => item.checked)?.value || '';
+  } else {
+    const isText = spec.type === 'string' && !spec._meta?.codex?.isSecret;
+    const input = document.createElement(isText ? 'textarea' : 'input');
+    if (isText) {input.rows = 3; input.placeholder = spec._meta?.codex?.role === 'user_note' ? '补充你的想法（可选）…' : '输入你的回答…';}
+    else input.type = spec.type === 'boolean' ? 'checkbox' : ['number','integer'].includes(spec.type) ? 'number' : 'password';
+    if (spec.type === 'integer') input.step = '1';
+    if (spec.type === 'number') input.step = 'any';
+    input.setAttribute('aria-label', spec.title || key); field.append(input); controls.push(input);
+    value = () => spec.type === 'boolean' ? input.checked : input.value !== '' && ['number','integer'].includes(spec.type) ? Number(input.value) : input.value;
+  }
+  const complete = () => !required || spec.type === 'boolean' || (Array.isArray(value()) ? value().length > 0 : String(value()).trim().length > 0);
+  return {key, field, controls, value, complete};
+}
 function renderQuestionCard(record, records, parent, sessionId, alive) {
   parent.hidden = false;
   const previous = records.get(record.id);
@@ -2881,53 +2923,83 @@ function renderQuestionCard(record, records, parent, sessionId, alive) {
   if (previous?.status === 'pending' && record.status === 'pending') return;
   const payload = typeof record.payload === 'string' ? JSON.parse(record.payload) : record.payload;
   const merged = {...previous, ...record, payload:{...previous?.payload, ...payload}};
-  const root = previous?.root || document.createElement('section'); root.className = 'question-card'; merged.root = root;
+  const root = previous?.root || questionNode('section', 'question-card'); merged.root = root;
+  root.dataset.state = merged.status;
   records.set(record.id, merged); parent.append(root);
-  const heading = document.createElement('h4'); heading.textContent = '需要你确认'; root.replaceChildren(heading);
+  const header = questionNode('header', 'question-header');
+  const identity = questionNode('div', 'question-identity');
+  identity.append(questionNode('span', 'question-symbol', merged.status === 'pending' ? '?' : '✓'), questionNode('span', '', '需要你的意见'));
+  const badge = questionNode('span', 'question-status', merged.status === 'pending' ? '等待回答' : merged.status === 'answered' ? '已回答' : '已结束');
+  header.append(identity, badge); root.replaceChildren(header);
   if (merged.status !== 'pending') {
-    const done = document.createElement('p'); done.textContent = merged.status === 'answered' ? '已提交回答' : '问题已结束'; root.append(done);
     const response = typeof merged.response === 'string' ? JSON.parse(merged.response) : merged.response || merged.payload;
+    const summary = questionNode('div', 'question-result'); root.append(summary);
+    if (response.action === 'decline') summary.append(questionNode('p', '', '已跳过这组问题'));
     for (const [key, value] of Object.entries(response.content || {})) {
       const spec = merged.payload.schema?.properties?.[key] || {};
-      const line = document.createElement('p'); line.textContent = `${spec.title || key}：${spec._meta?.codex?.isSecret ? '••••' : value}`; root.append(line);
+      const row = questionNode('div', 'question-result-row');
+      row.append(questionNode('span', 'question-result-label', spec.title || key), questionNode('span', '', spec._meta?.codex?.isSecret ? '••••' : String(value)));
+      summary.append(row);
     }
     return;
   }
-  const schema = merged.payload.schema || {}, inputs = new Map();
-  const form = document.createElement('form'); root.append(form);
+  const schema = merged.payload.schema || {}, fields = new Map(), groups = [];
+  for (const [key, spec] of Object.entries(schema.properties || {})) fields.set(key, questionField(key, spec, record.id, (schema.required || []).includes(key)));
   for (const [key, spec] of Object.entries(schema.properties || {})) {
-    const label = document.createElement('label'); label.className = 'question-field';
-    const title = document.createElement('span'); title.textContent = spec.title || key; label.append(title);
-    if (spec.description) {const help = document.createElement('small'); help.textContent = spec.description; label.append(help);}
-    const choices = spec.oneOf || (spec.enum || []).map((value, i) => ({const:value, title:spec.enumNames?.[i] || value}));
-    let input;
-    if (spec.type === 'array') {
-      input = document.createElement('select'); input.multiple = true;
-      for (const value of spec.items?.enum || []) {const option = document.createElement('option'); option.value = value; option.textContent = value; input.append(option);}
-    } else if (choices.length) {
-      input = document.createElement('select');
-      const empty = document.createElement('option'); empty.value = ''; empty.textContent = '请选择'; input.append(empty);
-      for (const choice of choices) {const option = document.createElement('option'); option.value = choice.const; option.textContent = choice.title + (choice.description ? ' — ' + choice.description : ''); input.append(option);}
-    } else {
-      input = document.createElement('input'); input.type = spec.type === 'boolean' ? 'checkbox' : ['number','integer'].includes(spec.type) ? 'number' : spec._meta?.codex?.isSecret ? 'password' : 'text';
-      if (spec.type === 'integer') input.step = '1';
-    }
-    input.required = (schema.required || []).includes(key) && spec.type !== 'boolean';
-    input.setAttribute('aria-label', spec.title || key); label.append(input); form.append(label); inputs.set(key, {input, spec});
+    const meta = spec._meta?.codex;
+    if (meta?.role === 'user_note' && fields.has(meta.questionId)) continue;
+    const members = [fields.get(key), ...Object.entries(schema.properties || {}).filter(([, item]) => item._meta?.codex?.role === 'user_note' && item._meta.codex.questionId === key).map(([id]) => fields.get(id))];
+    const panel = questionNode('div', 'question-panel');
+    for (const member of members) panel.append(member.field);
+    groups.push({panel, members});
   }
-  const error = document.createElement('p'); error.className = 'form-error'; error.setAttribute('role','alert');
-  const send = document.createElement('button'); send.type = 'submit'; send.textContent = '提交回答';
-  const decline = document.createElement('button'); decline.type = 'button'; decline.textContent = '跳过问题';
-  form.append(send, decline, error);
+  const form = document.createElement('form'); form.noValidate = true; root.append(form);
+  const navigation = questionNode('nav', 'question-navigation'); navigation.setAttribute('aria-label','问题导航');
+  const tabs = groups.map((group, index) => {
+    const tab = questionNode('button', 'question-step', String(index + 1)); tab.type = 'button';
+    tab.setAttribute('aria-label', `第 ${index + 1} 个问题`);
+    tab.addEventListener('click', () => show(index)); navigation.append(tab); return tab;
+  });
+  navigation.hidden = groups.length < 2; form.append(navigation);
+  for (const group of groups) form.append(group.panel);
+  const footer = questionNode('footer', 'question-footer');
+  const progress = questionNode('span', 'question-progress'); progress.setAttribute('aria-live','polite');
+  const actions = questionNode('div', 'question-actions');
+  const back = questionNode('button', 'question-back', '上一个'); back.type = 'button';
+  const next = questionNode('button', 'question-next', '下一个'); next.type = 'button';
+  const send = questionNode('button', 'question-submit', '提交回答 ↗'); send.type = 'submit';
+  const decline = questionNode('button', 'question-skip', '跳过'); decline.type = 'button';
+  const error = questionNode('p', 'form-error'); error.setAttribute('role','alert');
+  actions.append(back, next, send); footer.append(decline, progress, actions); form.append(footer, error);
+  let active = 0;
+  const refresh = () => {
+    const complete = groups.filter(group => group.members.every(member => member.complete())).length;
+    progress.textContent = `${active + 1} / ${groups.length}`;
+    progress.setAttribute('aria-label', `已回答 ${complete} / ${groups.length} 个问题`);
+    tabs.forEach((tab, index) => {
+      tab.setAttribute('aria-current', index === active ? 'step' : 'false');
+      tab.dataset.complete = String(groups[index].members.every(member => member.complete()));
+    });
+    send.disabled = Boolean(merged.submitting) || complete !== groups.length;
+    back.hidden = active === 0; next.hidden = active >= groups.length - 1; send.hidden = !next.hidden;
+  };
+  const show = index => {active = index; groups.forEach((group, i) => {group.panel.hidden = i !== index;}); refresh();};
+  back.addEventListener('click', () => show(active - 1)); next.addEventListener('click', () => show(active + 1));
+  for (const field of fields.values()) for (const control of field.controls) {
+    control.addEventListener('input', refresh); control.addEventListener('change', refresh);
+  }
+  const setBusy = busy => {
+    merged.submitting = busy;
+    for (const control of form.querySelectorAll('input,textarea,button')) control.disabled = busy;
+    root.setAttribute('aria-busy', String(busy)); send.textContent = busy ? '提交中…' : '提交回答 ↗'; refresh();
+  };
+  show(0);
   const submit = async action => {
     if (!alive() || merged.submitting) return;
-    merged.submitting = true; send.disabled = decline.disabled = true;
+    if (action === 'accept' && [...fields.values()].some(field => !field.complete())) return;
+    setBusy(true); error.textContent = '';
     const content = {};
-    for (const [key, {input, spec}] of inputs) {
-      if (spec.type === 'boolean') content[key] = input.checked;
-      else if (spec.type === 'array') content[key] = [...input.selectedOptions].map(option => option.value);
-      else if (input.value !== '') content[key] = ['number','integer'].includes(spec.type) ? Number(input.value) : input.value;
-    }
+    for (const [key, field] of fields) if (field.value() !== '') content[key] = field.value();
     try {
       const result = await api(`/api/interactions/${record.id}/question-answer`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action, content})});
       if (alive()) renderQuestionCard(result, records, parent, sessionId, alive);
@@ -2938,7 +3010,7 @@ function renderQuestionCard(record, records, parent, sessionId, alive) {
         const detail = await api(`/api/sessions/${sessionId}?summary=true`);
         if (!alive()) return;
         if (!detail.interactions.some(item => item.id === record.id)) renderQuestionCard({...merged,status:'resolved'},records,parent,sessionId,alive);
-        else send.disabled = decline.disabled = false;
+        else setBusy(false);
       } catch {error.textContent += '；状态待核对，请刷新页面。';}
     } finally {merged.submitting = false;}
   };
