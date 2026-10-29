@@ -18,6 +18,7 @@ const STATUS_LABELS = {
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'canceled', 'interrupted']);
 const CANCELABLE_STATUSES = new Set(['queued', 'running', 'waiting_permission']);
 const HISTORY_PAGE_SIZE = 100;
+const HISTORY_RUN_LIMIT = 60;
 const LIVE_EVENT_LIMIT = 256;
 const RECONNECT_DELAY_MS = 3000;
 const SELECTION_KEY = 'agentsteam.selection';
@@ -1900,7 +1901,7 @@ function trimHistory(context, keep = new Set()) {
     };
     return distance(right) - distance(left);
   });
-  while (candidates.length > 60) {
+  while (candidates.length > HISTORY_RUN_LIMIT) {
     const index = candidates.findIndex(id => !keep.has(id));
     if (index < 0) break;
     evictRun(context, candidates.splice(index, 1)[0]);

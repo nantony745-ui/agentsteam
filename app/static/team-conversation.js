@@ -6,6 +6,7 @@ class TeamConversation {
     this.cursor = 0; this.revision = 0; this.closed = false; this.loading = true;
     this.buffer = []; this.runs = new Map(); this.permissions = new Map(); this.tools = new Map(); this.questions = new Map();
     this.events = Promise.resolve();
+    this.slots = new Map(); this.replaying = 0;
     this.dirtyText = new Set(); this.textTimer = this.textFrame = null;
     this.before = null; this.pending = null;
     try {this.pending = JSON.parse(sessionStorage.getItem(this.pendingKey()));} catch {}
@@ -86,20 +87,31 @@ class TeamConversation {
     this.loading = false;
     await Promise.all(buffered.map(row => this.receive(row)));
     if (this.closed) return;
-    this.flushText(); this.input.disabled = false; this.status.textContent = '已连接'; this.update();
+    this.flushText(); this.trimHistory(); this.input.disabled = false; this.status.textContent = '已连接'; this.update();
     this.timeline.scrollTop = this.savedScroll && !this.savedScroll.bottom ? this.savedScroll.top : this.timeline.scrollHeight;
   }
   async readEvents(runs, high, includeContext) {
     let cursor = 0;
+    this.replaying += 1;
+    try {
     while (!this.closed) {
       const query = new URLSearchParams({project_id:this.session.project_id, session_id:this.session.id,
         after_event_id:String(cursor), through_event_id:String(high), limit:'100', include_context:String(includeContext)});
       for (const run of runs) query.append('run_id', run.id);
       if (!runs.length) query.append('run_id', '');
       const rows = await api(`/api/events?${query}`);
-      if (this.closed || !rows.length) return;
+      if (this.closed) return;
+      if (!rows.length) break;
       for (const row of rows) await this.apply(await hydrateEvent(row));
       cursor = rows.at(-1).id;
+    }
+    if (!this.closed) for (const record of runs) {
+      const run = this.runs.get(record.id);
+      if (run && TERMINAL_STATUSES.has(run.record.status)) this.finish(run);
+    }
+    } finally {
+      this.replaying -= 1;
+      this.trimHistory(new Set(runs.map(run => run.id)));
     }
   }
   async loadOlder() {
@@ -128,9 +140,54 @@ class TeamConversation {
     content.append(user, work, alerts, files); root.append(content);
     const run = {root, user, work, summary, items, alerts, files, record:{id, ...record}, seen:new Set(), text:null, segments:[]};
     this.runs.set(id, run);
-    const sorted = [...this.runs.values()].sort((a,b) => (a.record.created_at || '').localeCompare(b.record.created_at || ''));
+    this.slots.get(id)?.root.remove(); this.slots.delete(id);
+    const sorted = [...this.runs.values(), ...this.slots.values()].sort((a,b) => (a.record.created_at || '').localeCompare(b.record.created_at || ''));
     for (const item of sorted) this.timeline.append(item.root);
     return run;
+  }
+  trimHistory(keep = new Set()) {
+    if (this.closed || this.loading || this.replaying) return;
+    const candidates = [...this.runs.values()].filter(run => TERMINAL_STATUSES.has(run.record.status));
+    const viewport = this.timeline.getBoundingClientRect?.();
+    if (viewport) candidates.sort((left, right) => {
+      const distance = run => {const bounds = run.root.getBoundingClientRect(); return Math.abs((bounds.top + bounds.bottom - viewport.top - viewport.bottom) / 2);};
+      return distance(right) - distance(left);
+    });
+    while (candidates.length > HISTORY_RUN_LIMIT) {
+      const index = candidates.findIndex(run => !keep.has(run.record.id));
+      if (index < 0) break;
+      this.evictRun(candidates.splice(index, 1)[0]);
+    }
+  }
+  evictRun(run) {
+    const id = run.record.id;
+    const root = this.button('重新加载这一轮历史', () => this.restoreRun(id)); root.className = 'history-placeholder';
+    root.style.minHeight = `${run.root.getBoundingClientRect?.().height || 160}px`;
+    this.timeline.insertBefore(root, run.root);
+    this.slots.set(id, {root, record:{created_at:run.record.created_at}});
+    for (const block of run.segments) this.dirtyText.delete(block);
+    for (const [key, tool] of this.tools) if (tool.runId === id) this.tools.delete(key);
+    for (const records of [this.permissions, this.questions]) for (const [key, item] of records) if (item.run_id === id) records.delete(key);
+    run.root.remove(); this.runs.delete(id);
+  }
+  async restoreRun(id) {
+    const slot = this.slots.get(id);
+    if (!slot || slot.root.disabled || this.closed) return;
+    slot.root.disabled = true;
+    try {
+      const record = await api(`/api/runs/${id}?summary=true`);
+      if (this.closed || this.slots.get(id) !== slot) return;
+      this.ensureRun(id, record);
+      await this.readEvents([record], this.cursor, false);
+      if (!this.closed) {this.flushText(); this.trimHistory(new Set([id])); this.update();}
+    } catch (error) {
+      if (!this.closed) {
+        if (this.runs.has(id)) this.evictRun(this.runs.get(id));
+        const failed = this.slots.get(id);
+        if (failed) {failed.root.disabled = false; failed.root.textContent = `加载失败，点击重试：${error.message}`;}
+      }
+      throw error;
+    }
   }
   receive(row) {
     const next = this.events.then(async () => {
@@ -217,6 +274,7 @@ class TeamConversation {
         run.record.finished_at = row.created_at;
         this.finish(run); this.fileChanges(run).catch(error => {if (!this.closed) run.files.textContent = error.message;});
         if (payload.error) run.alerts.append(this.node('p', 'run-error', payload.error));
+        this.trimHistory(new Set([row.run_id]));
       }
     }
     if (!['agent.text','agent.tool'].includes(row.kind)) this.update();
@@ -232,8 +290,10 @@ class TeamConversation {
   finish(run) {
     this.flushText();
     const last = run.items.lastElementChild;
-    if (last?.classList.contains('agent-text')) {last.classList.add('team-final-answer'); run.root.querySelector('.run-content').insertBefore(last, run.alerts);}
+    if (!run.root.querySelector('.team-final-answer') && last?.classList.contains('agent-text')) {last.classList.add('team-final-answer'); run.root.querySelector('.run-content').insertBefore(last, run.alerts);}
     if (!run.work.dataset.manual) run.work.open = run.record.status !== 'completed' || !run.root.querySelector('.team-final-answer');
+    for (const block of run.segments) delete block.text;
+    run.text = null;
   }
   async toolDetails(tool) {
     if (tool.loaded) return;
@@ -296,7 +356,7 @@ class TeamConversation {
   async fileChanges(run) {
     if (run.loadingFiles) return; run.loadingFiles = true;
     try {
-      const data = await api(`/api/runs/${run.record.id}/file-changes`); if (this.closed) return;
+      const data = await api(`/api/runs/${run.record.id}/file-changes`); if (this.closed || this.runs.get(run.record.id) !== run) return;
       run.files.replaceChildren();
       if (run.record.task_id) run.files.append(this.button('任务变更', async () => {
         const diff = await api(`/api/tasks/${run.record.task_id}/diff`);
@@ -361,5 +421,9 @@ class TeamConversation {
     finally {this.sending = false; this.update();}
   }
   async stop() {if (this.activeRun) await api(`/api/runs/${this.activeRun.record.id}/cancel`, {method:'POST'});}
-  destroy() {this.saveDraft(); this.closed = true; this.revision++; clearInterval(this.timer); cancelTextFlush(this); this.dirtyText.clear(); this.root.remove();}
+  destroy() {
+    this.saveDraft(); this.closed = true; this.revision++; clearInterval(this.timer); cancelTextFlush(this);
+    for (const records of [this.runs, this.slots, this.tools, this.permissions, this.questions, this.dirtyText]) records.clear();
+    this.buffer.length = 0; this.root.remove();
+  }
 }

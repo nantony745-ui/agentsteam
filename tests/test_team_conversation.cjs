@@ -201,3 +201,44 @@ test('权限回答网络失败后核对服务端结果，已解决权限不重�
   assert.equal(env.run('first.permissions.get("permission").root.querySelectorAll("button").length'),0);
   assert.equal(env.run('second.permissions.size'),0);
 });
+
+test('团队历史保留60轮并释放关联记录，占位补拉保持实时游标且失败可重试', async () => {
+  const env = setup();
+  await env.run(`(async()=>{
+    globalThis.records=Array.from({length:100},(_,i)=>({id:'r'+i,session_id:'one',status:'completed',created_at:new Date(1700000000000+i*1000).toISOString()}));
+    globalThis.rows=records.flatMap((run,i)=>[
+      {id:i*5+1,session_id:'one',run_id:run.id,kind:'user.message',payload:{message:'输入'+i}},
+      {id:i*5+2,session_id:'one',run_id:run.id,kind:'agent.tool',payload:{toolCallId:'t',status:'completed'}},
+      {id:i*5+3,session_id:'one',run_id:run.id,kind:'agent.text',payload:{channel:'message',text:'正文'+i}},
+      {id:i*5+4,session_id:'one',run_id:run.id,kind:'permission.expired',payload:{permission_id:'p'+i,status:'expired'}},
+      {id:i*5+5,session_id:'one',run_id:run.id,kind:'run.status',payload:{status:'completed'},created_at:run.created_at},
+    ]);
+    api=async path=>{
+      const [base,search]=path.split('?'),q=new URLSearchParams(search);
+      if(base.endsWith('/file-changes'))return {files:[]};
+      if(base==='/api/events')return rows.filter(row=>q.getAll('run_id').includes(row.run_id)&&row.id>Number(q.get('after_event_id'))&&row.id<=Number(q.get('through_event_id'))).slice(0,100);
+      return records.find(run=>base.endsWith('/'+run.id));
+    };
+    for(const run of records){first.ensureRun(run.id,run);first.questions.set(run.id,{run_id:run.id,status:'answered'});for(const row of rows.filter(row=>row.run_id===run.id))await first.apply(row);}
+    first.cursor=500;
+  })()`);
+  assert.equal(env.run('first.runs.size'),60);
+  assert.equal(env.run('first.slots.size'),40);
+  assert.equal(env.run('first.tools.size'),60);
+  assert.equal(env.run('first.permissions.size'),60);
+  assert.equal(env.run('first.questions.size'),60);
+  assert.equal(env.run('[...first.runs.values()].every(run=>run.segments.every(block=>block.text===undefined))'),true);
+  await env.run(`first.restoreRun('r0')`);
+  assert.equal(env.run('first.runs.size'),60);
+  assert.equal(env.run('first.runs.get("r0").root.querySelector(".team-final-answer").innerHTML.includes("正文0")'),true);
+  assert.equal(env.run('first.cursor'),500);
+  await env.run(`(async()=>{globalThis.originalApi=api;api=async path=>{if(path.startsWith('/api/events'))throw new Error('offline');return originalApi(path);};try{await first.restoreRun('r1');}catch{};})()`);
+  assert.equal(env.run('first.slots.get("r1").root.disabled'),false);
+  await env.run(`api=originalApi;first.restoreRun('r1')`);
+  assert.equal(env.run('first.runs.has("r1")'),true);
+  assert.equal(env.run('first.runs.size'),60);
+  env.run(`first.ensureRun('active',{status:'running'});first.trimHistory();`);
+  assert.equal(env.run('first.runs.has("active")'),true);
+  env.run('first.destroy()');
+  assert.equal(env.run('first.runs.size+first.slots.size+first.tools.size+first.permissions.size+first.questions.size'),0);
+});
