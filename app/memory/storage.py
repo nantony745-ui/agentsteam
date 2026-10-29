@@ -112,8 +112,8 @@ async def flush_capture_batch(db, session_id, member_id, threshold):
         await insert_source(db, f"run:{turn['run_id']}", turn["content"], json.loads(turn["metadata"]),
                             turn["session_id"], turn["run_id"], member_id)
     await db.executemany(
-        "UPDATE memory_capture_turns SET source_id=? WHERE run_id=?",
-        [(f"run:{turn['run_id']}", turn["run_id"]) for turn in turns],
+        "DELETE FROM memory_capture_turns WHERE run_id=?",
+        [(turn["run_id"],) for turn in turns],
     )
     return True
 

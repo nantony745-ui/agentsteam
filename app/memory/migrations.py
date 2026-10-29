@@ -9,3 +9,4 @@ async def migrate(db):
             await db.execute(f"ALTER TABLE {table} ADD COLUMN member_id TEXT")
     await db.execute("CREATE INDEX IF NOT EXISTS memory_capture_owner ON memory_capture_turns(member_id,source_id)")
     await db.execute("CREATE INDEX IF NOT EXISTS memory_source_owner ON memory_sources(member_id,created_at)")
+    await db.execute("DELETE FROM memory_capture_turns WHERE source_id IS NOT NULL")

@@ -162,6 +162,13 @@ async def test_capture_batches_all_five_turns_without_resubmitting(memory, repos
             await capture_completed_run(db, run['id'])
     assert len(await memory.store.sources()) == 10
     assert len(await memory.store.operations()) == 10
+    assert await storage._fetch_all('SELECT * FROM memory_capture_turns', ()) == []
+    await storage.close()
+    await storage.open()
+    async with storage.transaction() as db:
+        for run in runs:
+            await capture_completed_run(db, run['id'])
+    assert len(await memory.store.operations()) == 10
     await memory.tick()
     assert len(memory.engine.calls) == 10
     assert await storage._fetch_one('SELECT run_id FROM memory_capture_turns WHERE source_id IS NULL', ()) is None
@@ -187,6 +194,29 @@ async def test_capture_batches_all_five_turns_without_resubmitting(memory, repos
         assert item['metadata']['run_id'] == metadata['run_id']
         assert all(r['run_id'] == metadata['run_id'] for r in json.loads(item['content']))
         assert 'messages' not in item['metadata']
+
+
+@pytest.mark.asyncio
+async def test_reopen_cleans_legacy_submitted_buffers_only(memory, repository):
+    storage = memory.storage
+    project = await storage.create_project(project_input(repository))
+    session = await storage.create_session(SessionCreate(project_id=project['id'], harness='codex'))
+    for index in range(6):
+        await complete_turn(storage, session['id'], f'捕获 {index}')
+    sources = await memory.store.sources()
+    async with storage.transaction() as db:
+        for source in sources:
+            detail = await memory.store.source(source['id'])
+            revision = detail['revisions'][0]
+            await db.execute(
+                'INSERT INTO memory_capture_turns(run_id,session_id,content,metadata,source_id) VALUES (?,?,?,?,?)',
+                (source['run_id'], session['id'], revision['content'], json.dumps(revision['metadata']), source['id']),
+            )
+    await storage.close()
+    await storage.open()
+    rows = await storage._fetch_all('SELECT * FROM memory_capture_turns', ())
+    assert len(rows) == 1 and rows[0]['source_id'] is None
+    assert len(await memory.store.sources()) == len(await memory.store.operations()) == 5
 
 
 @pytest.mark.asyncio
