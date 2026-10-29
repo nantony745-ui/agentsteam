@@ -52,6 +52,7 @@ class HindsightEngine:
         self.poller = None
         self.task = None
         self.banks = set()
+        self.bank_lock = asyncio.Lock()
 
     async def start(self):
         from hindsight_api import config
@@ -108,10 +109,13 @@ class HindsightEngine:
 
     async def ensure_bank(self, member_id):
         bank = bank_id(member_id)
-        if bank not in self.banks:
-            await self.engine.ensure_bank_profile(bank, request_context=self.context)
-            await self.engine.update_bank_config(bank, bank_policy(), request_context=self.context)
-            self.banks.add(bank)
+        if bank in self.banks:
+            return bank
+        async with self.bank_lock:
+            if bank not in self.banks:
+                await self.engine.ensure_bank_profile(bank, request_context=self.context)
+                await self.engine.update_bank_config(bank, bank_policy(), request_context=self.context)
+                self.banks.add(bank)
         return bank
 
     async def submit(self, operation):

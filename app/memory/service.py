@@ -3,6 +3,7 @@
 import asyncio
 import json
 import time
+from contextlib import asynccontextmanager
 
 from app.memory.storage import MemoryStore
 from app.db.storage import RequestConflictError
@@ -25,6 +26,12 @@ class MemoryService:
         self.engine = None
         self.task = None
         self.lock = asyncio.Lock()
+        self.operations_lock = asyncio.Lock()
+        self.slots = asyncio.Semaphore(2)
+        self.idle = asyncio.Event()
+        self.idle.set()
+        self.active_operations = 0
+        self.closing = False
         self.error = None
         self.next_connect = 0.0
         self.employees = None
@@ -58,10 +65,12 @@ class MemoryService:
         self.task = asyncio.create_task(self._loop(), name="memory-outbox")
 
     async def close(self):
+        self.closing = True
         if self.task:
             self.task.cancel()
             await asyncio.gather(self.task, return_exceptions=True)
         async with self.lock:
+            await self.idle.wait()
             if self.engine:
                 await self.engine.close()
                 self.engine = None
@@ -87,6 +96,7 @@ class MemoryService:
             exists = await self.storage._fetch_one("SELECT id FROM memory_sources LIMIT 1", ())
             if exists and changed:
                 raise RequestConflictError("已存在记忆来源，不能切换数据库、Embedding 模型或维度")
+            await self.idle.wait()
             if self.engine:
                 await self.engine.close()
                 self.engine = None
@@ -110,6 +120,24 @@ class MemoryService:
             self.engine, self.error = candidate, None
         return self.engine
 
+    @asynccontextmanager
+    async def use_engine(self, member_id=None, *, agent_use=False):
+        async with self.slots:
+            async with self.lock:
+                if self.closing:
+                    raise MemoryUnavailable("记忆服务正在关闭")
+                if agent_use:
+                    await self.require_allowed(member_id)
+                engine = await self._ready()
+                self.active_operations += 1
+                self.idle.clear()
+            try:
+                yield engine
+            finally:
+                self.active_operations -= 1
+                if not self.active_operations:
+                    self.idle.set()
+
     async def retain(self, body, session_id=None, run_id=None, member_id=None):
         async with self.lock:
             if not self.config["enabled"]:
@@ -120,10 +148,7 @@ class MemoryService:
             return await self.store.retain(str(body.request_id), body.content, session_id, run_id, member_id)
 
     async def query(self, kind, query, member_id=None, *, agent_use=False):
-        async with self.lock:
-            if agent_use:
-                await self.require_allowed(member_id)
-            engine = await self._ready()
+        async with self.use_engine(member_id, agent_use=agent_use) as engine:
             await engine.ensure_bank(member_id)
             if agent_use:
                 await self.require_allowed(member_id)
@@ -137,17 +162,16 @@ class MemoryService:
         return result
 
     async def facts(self, kind, offset, member_id=None):
-        async with self.lock:
-            engine = await self._ready()
+        async with self.use_engine() as engine:
             await engine.ensure_bank(member_id)
             return await engine.facts(kind, offset, member_id)
 
     async def revise(self, source_id, version, content, delete, member_id=None):
-        async with self.lock:
+        async with self.operations_lock:
             return await self.store.revise(source_id, version, content, delete, member_id)
 
     async def retry(self, operation_id, member_id=None):
-        async with self.lock:
+        async with self.operations_lock:
             row = await self.storage._fetch_one("SELECT * FROM memory_operations WHERE id=?", (operation_id,))
             if row is None:
                 raise KeyError(operation_id)
@@ -156,17 +180,17 @@ class MemoryService:
             if row["status"] != "failed" or row["version"] != source["version"]:
                 raise RequestConflictError("仅能重试当前版本的失败操作")
             if row["action"] == "retain":
-                engine = await self._ready()
-                await engine.ensure_bank(member_id)
-            # 先持久化排队状态，再接触上游；响应丢失也不能让后续删除越过本次重试。
-            await self.store.retry(operation_id, member_id)
-            if row["action"] == "retain":
-                # 提交阶段失败可能还没有上游记录；重新提交使用同一个 operation_id。
-                result = await engine.submit(row)
-                state = await engine.operation(result["operation_id"], member_id)
-                if state["status"] in {"failed", "cancelled"}:
-                    await engine.retry(row["id"], member_id)
-                await self.store.update(operation_id, "accepted")
+                async with self.use_engine() as engine:
+                    await engine.ensure_bank(member_id)
+                    # 先持久化排队状态，再接触上游；响应丢失后继续使用同一 operation_id。
+                    await self.store.retry(operation_id, member_id)
+                    result = await engine.submit(row)
+                    state = await engine.operation(result["operation_id"], member_id)
+                    if state["status"] in {"failed", "cancelled"}:
+                        await engine.retry(row["id"], member_id)
+                    await self.store.update(operation_id, "accepted")
+            else:
+                await self.store.retry(operation_id, member_id)
 
     async def _loop(self):
         while True:
@@ -178,16 +202,24 @@ class MemoryService:
             await asyncio.sleep(2)
 
     async def tick(self):
-        async with self.lock:
-            engine = await self._ready()
-            for operation in await self.store.pending():
-                try:
-                    await self._advance(engine, operation)
-                except Exception as error:
-                    # 只在提交/删除阶段耗用本地重试；已接收操作由上游队列负责执行恢复。
-                    queued = operation["status"] == "queued"
-                    status = "failed" if queued and operation["attempts"] >= 2 else operation["status"]
-                    await self.store.update(operation["id"], status, error_label(error), attempt=queued)
+        async with self.use_engine():
+            pending = await self.store.pending()
+        for candidate in pending:
+            async with self.operations_lock:
+                operation = await self.storage._fetch_one(
+                    "SELECT o.*,s.member_id FROM memory_operations o JOIN memory_sources s ON s.id=o.source_id WHERE o.id=?",
+                    (candidate["id"],),
+                )
+                if operation["status"] not in {"queued", "accepted", "written", "consolidating"}:
+                    continue
+                async with self.use_engine() as engine:
+                    try:
+                        await self._advance(engine, operation)
+                    except Exception as error:
+                        # 只在提交/删除阶段耗用本地重试；已接收操作由上游队列负责执行恢复。
+                        queued = operation["status"] == "queued"
+                        status = "failed" if queued and operation["attempts"] >= 2 else operation["status"]
+                        await self.store.update(operation["id"], status, error_label(error), attempt=queued)
 
     async def _advance(self, engine, operation):
         state, key = operation["status"], operation["id"]
