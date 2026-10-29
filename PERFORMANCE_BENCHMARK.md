@@ -4,6 +4,8 @@
 
 对比提交：修改前 `02e38bb`，完成九项优化后 `156936d`。基准中发现历史窗口预算内也触发布局读取，当轮以 `2274e48` 单独修正，并另做三轮终态复测。大历史、队列和后端表项来自 `156936d`；长正文及终态表项使用修正后的 `2274e48`。
 
+上述实测在原开发仓库完成。本 GitHub 仓库通过逐项移植保留独立提交，优化前、九项优化后、布局修正版分别对应 `5bb3310`、`18ca4a5`、`09a731f`；迁移前核对了全部受修改原有文件与原基线一致。下文复现命令及脚本默认值使用本仓库提交，表格仍保留原次测量，未将迁移后的回归验证算作重新性能测量。请使用包含历史的克隆，浅克隆需先补齐上述提交。
+
 ## 实测结果
 
 时间和 JS 堆增量取每版三轮的中位数。每轮使用独立临时数据，两个版本交错执行。内存单位使用 MiB；正文流量单独标注 KiB。
@@ -56,11 +58,11 @@ node scripts/performance_compare.cjs profile_output/p1p2-ab-20261029
 复现补充修正版的长正文及终态测试：
 
 ```powershell
-.venv/Scripts/python.exe scripts/performance_compare.py --after 2274e48 --output profile_output/p1p2-ab-20261029-layout-fixed --export-only
+.venv/Scripts/python.exe scripts/performance_compare.py --after 09a731f --output profile_output/p1p2-ab-20261029-layout-fixed --export-only
 node scripts/performance_compare.cjs profile_output/p1p2-ab-20261029-layout-fixed --stream-only
 ```
 
-原始数据：[backend.json](profile_output/p1p2-ab-20261029/backend.json)、[完整浏览器场景](profile_output/p1p2-ab-20261029/browser.json)、[修正前终态补测](profile_output/p1p2-ab-20261029/browser-stream-layout.json)、[修正后终态补测](profile_output/p1p2-ab-20261029-layout-fixed/browser-stream-layout.json)。`profile_output` 沿用忽略规则，保留在本机。
+原始数据保存在原开发仓库的 `profile_output/p1p2-ab-20261029/`（`backend.json`、`browser.json`、`browser-stream-layout.json`）及 `profile_output/p1p2-ab-20261029-layout-fixed/browser-stream-layout.json`。`profile_output` 沿用忽略规则，原始产物仅保留本机，未上传 GitHub；克隆后执行以上命令可重新生成。
 
 | 本轮文件 | 类型与内容 |
 | --- | --- |
@@ -74,3 +76,11 @@ node scripts/performance_compare.cjs profile_output/p1p2-ab-20261029-layout-fixe
 | profile_output/p1p2-ab-20261029* | 本机产物：两个版本的源码副本、浏览器临时配置、提交元数据及原始 JSON；临时数据库由驱动创建并清理 |
 
 本轮全部前端回归 **176 项通过**，基准产物的样本数量、操作记录保留、侧栏变化恢复和终态内容校验通过；脚本语法和 `git diff --check` 通过。团队 Chromium 验收首轮因夹具未等待第三窗 prompt 就绪而超时；临时库确认仅前两窗有文本事件，修正测试前置条件后复测通过，覆盖多窗、权限、取消、窄屏和已删除队员历史，浏览器异常为零。
+
+## GitHub 仓库迁移验证
+
+`comeup_online` 的 `performance-optimization` 分支保留上述 12 个独立提交。迁移时逐文件核对 29 个提交文件与原开发版本一致，仅另行调整本报告和脚本默认 Git 引用；未迁移本地配置、业务数据或原始性能产物。
+
+- 目标仓库 `.venv/Scripts/python.exe -m pytest -q tests`：569 项通过，4 项因未安装可选 `hindsight_api` 失败、1 项因此跳过（267.82 秒）。使用原开发仓库已有完整环境，对目标源码执行 `D:/agentsteam/.venv/Scripts/python.exe -m pytest -q tests/test_memory_ingestion.py tests/test_memory_policy.py`：14 项通过（6.25 秒），覆盖上述 5 项，未安装依赖或修改测试。
+- 目标仓库全部前端测试 176 项通过；团队窗及会话删除两组 Chromium 验收通过，浏览器异常均为零。
+- 基准默认版本和布局修正版的源码导出均通过，三个引用都属于本分支祖先，克隆后可取得；脚本语法及 `git diff --check` 通过。本次迁移没有重跑性能计时，实测表格仍来自原开发仓库。

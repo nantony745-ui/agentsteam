@@ -202,8 +202,8 @@ async def backend(root, directory):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--before", default="02e38bb")
-    parser.add_argument("--after", default="156936d")
+    parser.add_argument("--before", default="5bb3310")
+    parser.add_argument("--after", default="18ca4a5")
     parser.add_argument("--output", type=Path, default=Path("profile_output/p1p2-ab-20261029"))
     parser.add_argument("--worker-root", type=Path)
     parser.add_argument("--export-only", action="store_true")
