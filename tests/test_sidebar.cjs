@@ -19,6 +19,37 @@ function sidebar(width = 1440) {
   return env;
 }
 
+test('侧栏条件请求遇到304不解析正文或重绘，失败和旧响应不替换ETag', async () => {
+  const env = sidebar();
+  await env.run(`(async () => {
+    const snapshot = state.sessions;
+    const calls = [];
+    let status = 200;
+    fetch = async (url, options) => {
+      calls.push(options.headers);
+      return {status, ok: status === 200, headers: {get: () => '"snapshot-1"'},
+        json: async () => {if (status === 304) throw new Error('304不应解析正文'); return snapshot;}};
+    };
+    await loadSessions();
+    const tree = $('#session-list').firstChild;
+    if (state.sidebarETag !== '"snapshot-1"') throw new Error('没有记录ETag');
+    status = 304;
+    await loadSessions();
+    if (calls[1]['If-None-Match'] !== '"snapshot-1"') throw new Error('没有条件请求');
+    if ($('#session-list').firstChild !== tree || state.sessions !== snapshot) throw new Error('304重绘了树');
+    let finish;
+    fetch = () => new Promise(resolve => {finish = resolve;});
+    const stale = loadSessions();
+    scheduleSidebarRefresh();
+    finish({status:200, ok:true, headers:{get:()=>'"stale"'}, json:async()=>snapshot});
+    await stale;
+    if (state.sidebarETag !== '"snapshot-1"') throw new Error('旧响应更新ETag');
+    fetch = async () => {throw new Error('断网');};
+    try {await loadSessions();} catch {}
+    if (state.sidebarETag !== '"snapshot-1"') throw new Error('失败清空ETag');
+  })()`);
+});
+
 test('项目树递归连接父子与孙会话，最近区跨项目只列主会话，后代活动提升祖先排序', () => {
   const env = sidebar();
   assert.deepEqual(env.get('#session-list').children.map(node => node.dataset.sessionId), ['a', 'e', 'b']);

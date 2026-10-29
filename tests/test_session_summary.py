@@ -1,5 +1,7 @@
 import asyncio
 from pathlib import Path
+from threading import get_ident
+from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import httpx
@@ -116,6 +118,75 @@ async def test_summary_http_and_path_only_project_creation(tmp_path, repository)
             assert (await client.get(f"/api/projects/{project['id']}/sessions")).json() == [detail]
             assert (await client.get(f"/api/sessions/{uuid4()}")).status_code == 404
     assert ProjectCreate(path=str(repository), name="兼容旧客户端").name == "兼容旧客户端"
+
+
+@pytest.mark.asyncio
+async def test_sidebar_conditional_snapshot_reuses_io_and_tracks_changes(api, http_records, monkeypatch):
+    client, application, _ = api
+    project, session = http_records
+    storage = application.state.storage
+    employees = application.state.employees
+    listing = AsyncMock(wraps=storage.list_sessions)
+    decorate = employees.decorate
+    loop_thread = get_ident()
+
+    def decorated(row):
+        assert get_ident() != loop_thread
+        return decorate(row)
+
+    decoration = Mock(side_effect=decorated)
+    monkeypatch.setattr(storage, "list_sessions", listing)
+    monkeypatch.setattr(employees, "decorate", decoration)
+    first = await client.get("/api/sessions")
+    etag = first.headers["etag"]
+    headers = {"If-None-Match": etag}
+    responses = await asyncio.gather(*(client.get("/api/sessions", headers=headers) for _ in range(12)))
+    assert all(response.status_code == 304 and response.content == b"" for response in responses)
+    assert listing.await_count == decoration.call_count == 1
+    assert first.headers["cache-control"] == "private, no-cache"
+    assert (await client.get("/api/sessions")).json() == first.json()
+    assert listing.await_count == 1
+
+    await storage.save_harness_settings("codex", {})
+    assert (await client.get("/api/sessions", headers=headers)).status_code == 304
+    assert listing.await_count == decoration.call_count == 2
+    created = await storage.create_session(SessionCreate(project_id=project["id"], harness="codex"))
+    changed = await client.get("/api/sessions", headers=headers)
+    assert changed.status_code == 200
+    assert {row["id"] for row in changed.json()} == {session["id"], created["id"]}
+    await storage.set_session_connection(session["id"], "native-sidebar", 123)
+    connected = await client.get("/api/sessions", headers={"If-None-Match": changed.headers["etag"]})
+    assert connected.status_code == 200
+    assert next(row for row in connected.json() if row["id"] == session["id"])["native_id"] == "native-sidebar"
+    await storage.delete_sessions([created["id"]])
+    deleted = await client.get("/api/sessions", headers={"If-None-Match": connected.headers["etag"]})
+    assert deleted.status_code == 200
+    assert [row["id"] for row in deleted.json()] == [session["id"]]
+    run, _ = await storage.create_run(session["id"], message("侧栏新标题"))
+    await storage.append_event(run["id"], "session.title", {"title": "跨页面新标题"})
+    titled = await client.get("/api/sessions", headers={"If-None-Match": deleted.headers["etag"]})
+    assert titled.status_code == 200
+    assert titled.json()[0]["title"] == "跨页面新标题"
+
+
+@pytest.mark.asyncio
+async def test_sidebar_write_during_snapshot_is_not_cached_as_current(api, http_records, monkeypatch):
+    client, application, _ = api
+    project, _ = http_records
+    storage = application.state.storage
+    original = storage.list_sessions
+
+    async def concurrent_snapshot(project_id):
+        rows = await original(project_id)
+        await storage.create_session(SessionCreate(project_id=project["id"], harness="codex"))
+        monkeypatch.setattr(storage, "list_sessions", original)
+        return rows
+
+    monkeypatch.setattr(storage, "list_sessions", concurrent_snapshot)
+    first = await client.get("/api/sessions")
+    latest = await client.get("/api/sessions", headers={"If-None-Match": first.headers["etag"]})
+    assert latest.status_code == 200
+    assert len(latest.json()) == len(first.json()) + 1
 
 
 @pytest.mark.parametrize("title", [None, "", "\t\n "])

@@ -86,6 +86,14 @@ async function run() {
     await send('Emulation.setDeviceMetricsOverride', {width:1440,height:900,deviceScaleFactor:1,mobile:false});
     await send('Page.navigate', {url:endpoint});
     await until(()=>evaluate("typeof state!=='undefined' && state.sessions.length===2 && state.sidebarPoll!==null"));
+    const conditional = await evaluate(`(async () => {
+      await loadSessions();
+      const node = document.querySelector('#session-list').firstChild;
+      const response = await fetch('/api/sessions', {cache:'no-store', headers:{'If-None-Match':state.sidebarETag}});
+      await loadSessions();
+      return {status:response.status, same:node===document.querySelector('#session-list').firstChild};
+    })()`);
+    assert.deepEqual(conditional,{status:304,same:true});
     await evaluate(`openSidebarSession(state.sessions.find(item=>item.id==='${other.id}'))`);
     await until(()=>evaluate(`state.context?.sessionId==='${other.id}' && state.context.ready`));
     const screenshot = async name => { const data=await send('Page.captureScreenshot',{format:'png'}); const file=path.join(directory,name+'.png'); fs.writeFileSync(file,Buffer.from(data.data,'base64')); return file; };

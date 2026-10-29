@@ -117,11 +117,11 @@ test('SSE 删除事件可重复处理，清理选中会话，不生成回合', (
 test('轮询发现外部删除也清理当前选择，删除前迟到列表不能恢复会话', async () => {
   const env=setup();
   env.run(`state.context={projectId:'p',sessionId:'child',generation:0};
-    globalThis.answer=null; fetch=async()=>{await new Promise(resolve=>answer=resolve);return {ok:true,json:async()=>state.sessions}};
+    globalThis.answer=null; fetch=async()=>{await new Promise(resolve=>answer=resolve);return {ok:true,headers:{get:()=>null},json:async()=>state.sessions}};
     globalThis.loading=loadSessions(); applyDeletedSessions(['parent','child']); answer();`);
   await env.run('loading');
   assert.equal(env.run('state.sessions.length'),1);
-  env.run(`state.context={projectId:'p',sessionId:'other',generation:state.generation}; fetch=async()=>({ok:true,json:async()=>[]});`);
+  env.run(`state.context={projectId:'p',sessionId:'other',generation:state.generation}; fetch=async()=>({ok:true,headers:{get:()=>null},json:async()=>[]});`);
   await env.run('loadSessions()');
   assert.equal(env.run('state.context'),null);
 });

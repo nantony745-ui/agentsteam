@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import binascii
+import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass
@@ -11,7 +12,7 @@ from typing import Annotated, Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from app.agents.acp_client import load_argv
 from app.domain.models import FeedbackCreate, MessageCreate, PermissionAnswer, QuestionAnswer, ProjectCreate, SessionCreate, UuidString
@@ -39,6 +40,8 @@ async def require_record(record: Any) -> Any:
 
 def create_router(stream_settings: StreamSettings) -> APIRouter:
     router = APIRouter()
+    sidebar_lock = asyncio.Lock()
+    sidebar_snapshot = None
 
     @router.post("/api/projects", status_code=201)
     async def create_project(body: ProjectCreate, request: Request):
@@ -112,8 +115,24 @@ def create_router(stream_settings: StreamSettings) -> APIRouter:
 
     @router.get("/api/sessions")
     async def all_sessions(request: Request):
-        return [request.app.state.employees.decorate(row)
-                for row in await request.app.state.storage.list_sessions(None)]
+        nonlocal sidebar_snapshot
+        storage = request.app.state.storage
+        async with sidebar_lock:
+            changed = storage.changed
+            if sidebar_snapshot is None or sidebar_snapshot[0] is not changed:
+                rows = await storage.list_sessions(None)
+                body = await asyncio.to_thread(lambda: JSONResponse([
+                    request.app.state.employees.decorate(row) for row in rows
+                ]).body)
+                etag = '"' + hashlib.sha256(body).hexdigest() + '"'
+                sidebar_snapshot = (changed, body, etag)
+            _, body, etag = sidebar_snapshot
+        headers = {"ETag": "W/" + etag, "Cache-Control": "private, no-cache"}
+        matches = {tag.strip().removeprefix("W/")
+                   for tag in request.headers.get("if-none-match", "").split(",")}
+        if etag in matches or "*" in matches:
+            return Response(status_code=304, headers=headers)
+        return Response(body, media_type="application/json", headers=headers)
 
     @router.get("/api/projects/{project_id}/sessions")
     async def sessions(project_id: UuidString, request: Request):

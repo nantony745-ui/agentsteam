@@ -53,6 +53,7 @@ const state = {
   sidebarPoll: null,
   sidebarVersion: 0,
   sidebarRevision: 0,
+  sidebarETag: null,
   projectCreating: false,
   source: null,
   reconnectTimer: null,
@@ -186,12 +187,14 @@ function renderProjectGit() {
 
 /* ---------- 通用 ---------- */
 
-async function api(path, options = {}) {
+async function api(path, options = {}, metadata = null) {
   const response = await fetch(path, options);
+  if (metadata && response.status === 304) return null;
   const data = await response.json();
   if (!response.ok) {
     throw new Error(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail));
   }
+  if (metadata) metadata.etag = response.headers.get('ETag');
   return data;
 }
 
@@ -253,8 +256,12 @@ function selectProject(projectId) {
 async function loadSessions() {
   const version = ++state.sidebarVersion;
   const revision = state.sidebarRevision;
-  const sessions = await api('/api/sessions');
+  const metadata = {};
+  const headers = state.sidebarETag ? {'If-None-Match': state.sidebarETag} : {};
+  const sessions = await api('/api/sessions', {headers, cache:'no-store'}, metadata);
   if (version !== state.sidebarVersion || revision !== state.sidebarRevision) return;
+  if (sessions === null) return;
+  state.sidebarETag = metadata.etag || null;
   const present = new Set(sessions.map(session => session.id));
   const removed = state.sessions.filter(session => !present.has(session.id)).map(session => session.id);
   if (removed.length) applyDeletedSessions(removed);
