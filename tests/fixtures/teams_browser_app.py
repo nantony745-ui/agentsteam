@@ -52,12 +52,15 @@ async def delegate(request: Request):
 @app.post("/fixture/emit")
 async def emit(request: Request):
     body = await request.json()
-    for client in factory.clients:
-        if client.host.runtime.session["id"] == body["session_id"]:
-            client.observe(StreamEvent(StreamDirection.INCOMING, {"jsonrpc":"2.0","method":"session/update",
-                "params":{"sessionId":"fixture","update":{"sessionUpdate":"tool_call","toolCallId":"shared-tool-id",
-                "title":body["text"],"kind":"read","status":"completed","content":[]}}}))
-            client.emit(body["text"])
+    clients = [client for client in factory.clients
+               if client.host.runtime.session["id"] == body["session_id"] and client.pending is not None]
+    if not clients:
+        return {"ok":False}
+    for client in clients:
+        client.observe(StreamEvent(StreamDirection.INCOMING, {"jsonrpc":"2.0","method":"session/update",
+            "params":{"sessionId":"fixture","update":{"sessionUpdate":"tool_call","toolCallId":"shared-tool-id",
+            "title":body["text"],"kind":"read","status":"completed","content":[]}}}))
+        client.emit(body["text"])
     return {"ok":True}
 
 

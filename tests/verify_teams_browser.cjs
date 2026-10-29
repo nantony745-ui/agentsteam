@@ -127,7 +127,11 @@ async function run() {
     assert.equal(first.child_session_id,sessionIds[1]);
     await fetch(base+`/api/sessions/${sessionIds[2]}/messages`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'第三窗独立执行',request_id:crypto.randomUUID()})});
     await until(()=>evaluate("document.querySelectorAll('.team-pane')[2].querySelector('.user-message')?.textContent==='第三窗独立执行'"));
-    for(const [i,id] of sessionIds.entries()) await fetch(base+'/fixture/emit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:id,text:'窗口隔离证据 '+i})});
+    for(const [i,id] of sessionIds.entries()) await until(async()=>{
+      const response=await fetch(base+'/fixture/emit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:id,text:'窗口隔离证据 '+i})});
+      assert.equal(response.ok,true);
+      return (await response.json()).ok;
+    });
     await until(()=>evaluate("[...document.querySelectorAll('.team-pane')].every((pane,i)=>pane.textContent.includes('窗口隔离证据 '+i))"));
     assert.equal(await evaluate("document.querySelectorAll('.team-pane')[0].textContent.includes('窗口隔离证据 1')"),false);
     assert.equal(await evaluate("document.querySelectorAll('.team-pane')[1].textContent.includes('窗口隔离证据 2')"),false);
