@@ -150,6 +150,7 @@ class TeamConversation {
   trimHistory(keep = new Set()) {
     if (this.closed || this.loading || this.replaying) return;
     const candidates = [...this.runs.values()].filter(run => TERMINAL_STATUSES.has(run.record.status));
+    if (candidates.length <= HISTORY_RUN_LIMIT) return;
     const viewport = this.timeline.getBoundingClientRect?.();
     if (viewport) candidates.sort((left, right) => {
       const distance = run => {const bounds = run.root.getBoundingClientRect(); return Math.abs((bounds.top + bounds.bottom - viewport.top - viewport.bottom) / 2);};

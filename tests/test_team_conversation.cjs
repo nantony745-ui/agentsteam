@@ -23,6 +23,16 @@ function setup() {
   return env;
 }
 
+test('完整历史未超预算时不读取布局，避免终态额外同步排版', () => {
+  const env = setup();
+  env.run(`
+    for(let n=0;n<HISTORY_RUN_LIMIT;n++)first.ensureRun('r'+n,{id:'r'+n,status:'completed'});
+    first.timeline.getBoundingClientRect=()=>{throw new Error('不需要淘汰时不应读取布局');};
+    first.trimHistory();
+  `);
+  assert.equal(env.run('first.runs.size'),60);
+});
+
 test('相同工具 ID 在不同窗口和 Run 中互不污染', async () => {
   const env = setup();
   await env.run(`(async()=>{

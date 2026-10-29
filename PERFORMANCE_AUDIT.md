@@ -81,3 +81,5 @@ Codeg 只读参照：src-tauri/src/workspace_state/mod.rs 的 recent_capacity、
 - 侧栏刷新：复用 Storage.changed 使共享摘要快照随已提交写入失效；空闲轮询不再查询全部摘要或读取绑定文件，变化后的绑定读取和 JSON 编码在线程执行。仅保留一份序列化快照，按内容生成弱 ETag；摘要未变返回 304，前端不解析正文、不重绘，不让迟到响应更新 ETag。保留原五秒跨页同步、焦点恢复、完整树和删除识别。参照 Codeg workspace_state 的版本与快照恢复边界，采用 HTTP 条件请求，未新增增量协议或依赖；活跃写入期间仍可能重新投影全量摘要。新增并发缓存复用、无关写入去重、创建/删除/标题/原生连接更新与构建期间写入测试；侧栏/工作台/删除 62 项前端、摘要/删除 29 项 Python 回归通过，Chromium 验证 304 不重绘。
 
 最终验证：`.venv/Scripts/python.exe -m pytest -q tests` 共 574 项通过（402.24 秒）；全部 `tests/test_*.cjs` 共 175 项通过；自有 JS 的 `node --check` 与 `git diff --check` 通过。`verify_teams_browser.cjs` 和 `verify_session_delete_browser.cjs` 在本机 Chromium、临时 SQLite 和 Agent 替身下通过，覆盖多窗/聚焦/窄屏、队员删除历史、会话删除及侧栏 304 不重绘，浏览器异常均为零。根目录不限定范围的 pytest 会同时收集 `comeup_online/tests` 副本并产生同名模块冲突，因此最终全套明确以本项目 `tests` 为入口。未启动真实 Agent、访问模型服务或改写业务数据库；没有做真实负载压测，也不承诺实际业务提速比例。
+
+前后版本基准发现的补充修正：团队历史未超过 60 轮时，trimHistory 直接返回，避免终态渲染后无必要的布局读取。仍沿用本库历史窗口规则，超过预算才按视距淘汰。新增“不超预算不读取布局”回归，团队/队列/流式渲染 21 项测试通过；基准数据另见本次性能对比报告。
