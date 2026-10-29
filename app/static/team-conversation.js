@@ -54,7 +54,9 @@ class TeamConversation {
     this.root.append(heading, this.timeline, form, this.status);
     this.root.addEventListener('pointerdown', () => owner.activate(this));
     this.root.addEventListener('focusin', () => owner.activate(this));
-    this.timer = setInterval(() => this.update(), 1000);
+    this.timer = null; this.visible = true; this.waitingRuns = new Set();
+    this.visibilityChanged = () => this.syncTimer();
+    document.addEventListener('visibilitychange', this.visibilityChanged);
     this.ready = this.load().catch(error => this.failure(error));
   }
   node(tag, className, text) { const value = document.createElement(tag); value.className = className; if (text != null) value.textContent = text; return value; }
@@ -372,20 +374,38 @@ class TeamConversation {
       }
     } finally {run.loadingFiles = false;}
   }
+  duration(run) {
+    const start = Date.parse(run.record.created_at), end = Date.parse(run.record.finished_at) || Date.now();
+    const summary = `Worked for ${Number.isFinite(start) ? formatWorkDuration(Math.max(0,end-start)) : '…'} · ${this.waitingRuns.has(run.record.id) ? '等待回答' : STATUS_LABELS[run.record.status] || '加载中'}`;
+    if (run.summary.textContent !== summary) run.summary.textContent = summary;
+  }
+  syncTimer() {
+    const running = !this.closed && this.visible && !document.hidden && this.activeRun;
+    if (!running && this.timer !== null) {clearInterval(this.timer); this.timer = null;}
+    if (running && this.timer === null) {
+      this.duration(this.activeRun);
+      this.timer = setInterval(() => this.duration(this.activeRun), 1000);
+    }
+  }
+  setVisible(visible) {
+    if (this.visible === visible) return;
+    this.visible = visible; this.root.hidden = !visible;
+    if (visible) this.update();
+    else this.syncTimer();
+  }
   update() {
     if (this.closed) return;
     this.fresh.disabled = this.member.state === 'deleted';
     this.fresh.title = this.fresh.disabled ? '队员已被删除' : '单开会话';
+    this.waitingRuns = new Set([...this.questions.values()].filter(item => item.status === 'pending').map(item => item.run_id));
     let active = null;
     for (const run of this.runs.values()) {
-      const start = Date.parse(run.record.created_at), end = Date.parse(run.record.finished_at) || Date.now();
-      const waiting = [...this.questions.values()].some(item => item.run_id === run.record.id && item.status === 'pending');
-      const summary = `Worked for ${Number.isFinite(start) ? formatWorkDuration(Math.max(0,end-start)) : '…'} · ${waiting ? '等待回答' : STATUS_LABELS[run.record.status] || '加载中'}`;
-      if (run.summary.textContent !== summary) run.summary.textContent = summary;
+      this.duration(run);
       if (['running','waiting_permission','cancel_requested'].includes(run.record.status)) active = run;
       else if (!active && run.record.status === 'queued') active = run;
     }
     this.activeRun = active; this.stopButton.hidden = !active;
+    this.syncTimer();
     for (const run of this.runs.values()) updatePlanActions(run.root, run.record.status === 'completed' && !active && !this.loading && !this.sending && !this.pending);
     this.mode.disabled = Boolean(this.pending || this.sending);
     this.sendButton.disabled = this.loading || Boolean(this.sending);
@@ -423,6 +443,7 @@ class TeamConversation {
   async stop() {if (this.activeRun) await api(`/api/runs/${this.activeRun.record.id}/cancel`, {method:'POST'});}
   destroy() {
     this.saveDraft(); this.closed = true; this.revision++; clearInterval(this.timer); cancelTextFlush(this);
+    this.timer = null; document.removeEventListener('visibilitychange', this.visibilityChanged);
     for (const records of [this.runs, this.slots, this.tools, this.permissions, this.questions, this.dirtyText]) records.clear();
     this.buffer.length = 0; this.root.remove();
   }

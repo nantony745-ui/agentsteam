@@ -116,6 +116,7 @@ function environment(width = 1440, saved = null) {
     querySelectorAll: selector => root.querySelectorAll(selector),
     createElement: tag => new Element(tag),
     addEventListener: (name, handler) => { (document.listeners[name] ||= []).push(handler); },
+    removeEventListener: (name, handler) => { document.listeners[name] = (document.listeners[name] || []).filter(item => item !== handler); },
     emit: (name, event) => { for (const handler of document.listeners[name] || []) handler(event); },
   };
   root.append(body);

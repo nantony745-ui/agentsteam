@@ -228,7 +228,7 @@ const TeamWorkspace = (() => {
       let shown = this.focused ? [this.focused] : this.panes.slice(0,capacity);
       if (this.active && !shown.includes(this.active)) shown = [...shown.slice(0,Math.max(0,capacity-1)),this.active];
       if (this.focused) shown = [this.focused];
-      for (const pane of this.panes) pane.root.hidden = !shown.includes(pane);
+      for (const pane of this.panes) pane.setVisible(shown.includes(pane));
       q('#team-pane-grid').style.setProperty('--team-columns',Math.max(1,shown.length));
     }
     file(title,content) {

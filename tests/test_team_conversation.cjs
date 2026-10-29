@@ -242,3 +242,34 @@ test('团队历史保留60轮并释放关联记录，占位补拉保持实时游
   env.run('first.destroy()');
   assert.equal(env.run('first.runs.size+first.slots.size+first.tools.size+first.permissions.size+first.questions.size'),0);
 });
+
+test('计时只更新活动轮，隐藏窗和隐藏页面暂停且恢复后补刷新', () => {
+  const env = setup();
+  env.run(`
+    globalThis.startedTimers=0;globalThis.stoppedTimers=0;
+    setInterval=callback=>{globalThis.tick=callback;return ++startedTimers;};clearInterval=()=>{stoppedTimers++;};
+    for(let i=0;i<50;i++)first.ensureRun('done'+i,{status:'completed',created_at:'2026-10-29T00:00:00Z',finished_at:'2026-10-29T00:01:00Z'});
+    first.ensureRun('active',{status:'running',created_at:'2026-10-29T00:00:00Z'});
+    first.questions.set('q',{run_id:'active',status:'pending'});
+    const originalValues=first.questions.values.bind(first.questions);globalThis.questionScans=0;
+    first.questions.values=()=>{questionScans++;return originalValues();};
+    first.update();globalThis.scansAfterUpdate=questionScans;
+    globalThis.historySummary=first.runs.get('done0').summary.textContent;
+    for(let i=0;i<10;i++)tick();
+  `);
+  assert.equal(env.run('questionScans'),env.run('scansAfterUpdate'));
+  assert.equal(env.run('first.runs.get("done0").summary.textContent===historySummary'),true);
+  assert.match(env.run('first.runs.get("active").summary.textContent'),/等待回答/);
+  env.run('first.setVisible(false)');
+  assert.equal(env.run('first.timer'),null);
+  env.run('first.setVisible(true)');
+  assert.equal(env.run('startedTimers'),2);
+  env.run('document.hidden=true;document.emit("visibilitychange",{})');
+  assert.equal(env.run('first.timer'),null);
+  env.run('document.hidden=false;document.emit("visibilitychange",{})');
+  assert.equal(env.run('startedTimers'),3);
+  env.run('first.runs.get("active").record.status="completed";first.update();');
+  assert.equal(env.run('first.timer'),null);
+  env.run('first.destroy()');
+  assert.equal(env.run('document.listeners.visibilitychange.includes(first.visibilityChanged)'),false);
+});
