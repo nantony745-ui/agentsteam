@@ -67,3 +67,41 @@ test('处理失败保留确认游标，断线重放未确认事件', async () =>
   assert.equal(env.run('ws.deliveries.size'),0);
   assert.equal(env.run('ws.source'),null);
 });
+
+test('慢窗口积压有界，排空后从最后确认游标重连并去重', async () => {
+  const env = setup();
+  await env.run(`(async()=>{
+    globalThis.seen=new Set();globalThis.received=[];
+    const pane={session:{id:'a'},events:Promise.resolve(),receive(row){
+      this.events=this.events.then(async()=>{
+        if(row.id===1&&!seen.has(1))await new Promise(resolve=>{globalThis.release=resolve;});
+        if(!seen.has(row.id)){seen.add(row.id);received.push(row.id);}
+      });return this.events;
+    }};
+    ws.panes=[pane];ws.subscribe();globalThis.oldSource=source;
+    source.emit({id:1,session_id:'a',kind:'agent.text',payload:{}});await ws.chain;
+    for(let id=2;id<=LIVE_EVENT_LIMIT;id++){
+      source.emit({id,session_id:'a',kind:'agent.text',payload:{}});await ws.chain;
+    }
+  })()`);
+  assert.equal(env.run('ws.pendingEvents'),256);
+  assert.equal(env.run('ws.deliveries.size'),256);
+  env.run(`source.emit({id:257,session_id:'a',kind:'agent.text',payload:{}})`);
+  assert.equal(env.run('oldSource.closed'),true);
+  assert.equal(env.run('ws.cursor'),0);
+  assert.equal(env.run('ws.pendingEvents'),0);
+  const reconnect = env.run('ws.reconnect');
+  env.timers.get(reconnect)();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(env.run('ws.source'),null);
+  env.run('release()');
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(env.run('ws.source!==null&&source!==oldSource'),true);
+  await env.run(`(async()=>{for(let id=1;id<=257;id++){
+    source.emit({id,session_id:'a',kind:'agent.text',payload:{}});await ws.chain;await ws.panes[0].events;
+  }})()`);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(env.run('received.length'),257);
+  assert.equal(env.run('ws.cursor'),257);
+  assert.equal(env.run('ws.pendingEvents'),0);
+});

@@ -119,6 +119,14 @@ test('加载期间缓冲增量，历史水位以前的重复消息不重放', as
   assert.equal(env.run('first.buffer.length'),0);
 });
 
+test('历史加载期间的实时缓冲也受同一事件预算约束', async () => {
+  const env = setup();
+  await env.run(`(async()=>{first.loading=true;for(let id=1;id<=LIVE_EVENT_LIMIT;id++)await first.receive({id,session_id:'one',kind:'session.model',payload:{}});})()`);
+  await assert.rejects(env.run(`first.receive({id:257,session_id:'one',kind:'session.model',payload:{}})`), /事件积压/);
+  assert.equal(env.run('first.buffer.length'),256);
+  assert.equal(env.run('first.cursor'),0);
+});
+
 test('停止优先当前执行，窗口输入与取消只提交自己的会话和 Run', async () => {
   const env = setup();
   await env.run(`(async()=>{

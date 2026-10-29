@@ -8,6 +8,7 @@ const TeamWorkspace = (() => {
       this.source = null; this.cursor = 0; this.generation = 0; this.unread = new Map(); this.chain = Promise.resolve();
       this.focused = null; this.refreshTimer = null; this.reconnect = null; this.leaderRevision = 0;
       this.deliveries = new Map();
+      this.pendingEvents = 0;
       this.observer = new ResizeObserver(() => this.layout()); this.observer.observe(q('#team-workspace'));
       q('#team-new-leader').addEventListener('click', () => this.newLeader().catch(error => this.error(error)));
     }
@@ -20,7 +21,7 @@ const TeamWorkspace = (() => {
       const version = ++this.generation;
       this.source?.close(); this.source = null; clearTimeout(this.reconnect); clearTimeout(this.refreshTimer);
       this.reconnect = this.refreshTimer = null; this.chain = Promise.resolve();
-      this.deliveries.clear(); this.tabSignature = null;
+      this.deliveries.clear(); this.pendingEvents = 0; this.tabSignature = null;
       for (const pane of this.panes) pane.destroy();
       this.panes = []; this.active = null; this.focused = null; this.roster = null; this.unread.clear(); this.project = project?.team ? project : null;
       q('#team-workspace').hidden = !this.project;
@@ -55,7 +56,7 @@ const TeamWorkspace = (() => {
       const roster = await api(`/api/sessions/${id}/team`);
       if (version !== this.generation || revision !== this.leaderRevision) return;
       this.source?.close(); clearTimeout(this.reconnect); this.reconnect = null;
-      this.deliveries.clear(); this.tabSignature = null;
+      this.deliveries.clear(); this.pendingEvents = 0; this.tabSignature = null;
       for (const pane of this.panes) pane.destroy(); this.panes = []; this.active = null; this.focused = null;
       this.roster = roster; this.cursor = roster.high_watermark; this.unread.clear();
       this.subscribe(); this.tabs();
@@ -92,8 +93,11 @@ const TeamWorkspace = (() => {
         if (version !== this.generation || this.source !== source) return;
         let row;
         try {row = JSON.parse(event.data);} catch (error) {this.error(error); source.close(); return;}
+        if (this.pendingEvents >= LIVE_EVENT_LIMIT) {this.disconnect(source); return;}
+        this.pendingEvents += 1;
         this.chain = this.chain.then(async () => {
-          if (version !== this.generation || this.source !== source || leader !== this.roster?.leader_session_id || row.id <= this.cursor || this.deliveries.has(row.id)) return;
+          if (version !== this.generation || this.source !== source || leader !== this.roster?.leader_session_id) return;
+          if (row.id <= this.cursor || this.deliveries.has(row.id)) {this.pendingEvents -= 1; return;}
           if (row.kind === 'session.deleted') {
             for (const pane of [...this.panes]) if (row.payload.session_ids.includes(pane.session.id)) this.closePane(pane);
             if (row.payload.session_ids.includes(leader)) {
@@ -106,7 +110,7 @@ const TeamWorkspace = (() => {
             delivery.done = true;
             for (const [id, item] of this.deliveries) {
               if (!item.done) break;
-              this.cursor = id; this.deliveries.delete(id);
+              this.cursor = id; this.deliveries.delete(id); this.pendingEvents -= 1;
             }
           }).catch(error => {
             if (version !== this.generation || this.source !== source) return;
@@ -132,9 +136,17 @@ const TeamWorkspace = (() => {
     }
     disconnect(source) {
       source.close(); this.source = null;
-      this.deliveries.clear();
+      this.deliveries.clear(); this.pendingEvents = 0;
       q('#team-workspace-status').textContent = '连接中断，正在补拉…';
-      if (!this.reconnect) this.reconnect = setTimeout(() => {this.reconnect = null; if (this.project && this.roster) this.subscribe();}, 3000);
+      const version = this.generation, leader = this.roster?.leader_session_id;
+      const drained = Promise.all(this.panes.map(pane => Promise.all([pane.events, pane.ready])));
+      if (!this.reconnect) this.reconnect = setTimeout(() => {
+        drained.then(() => {
+          if (version !== this.generation || leader !== this.roster?.leader_session_id) return;
+          this.reconnect = null;
+          if (!this.source) this.subscribe();
+        });
+      }, RECONNECT_DELAY_MS);
     }
     tabs() {
       if (!this.roster) return;

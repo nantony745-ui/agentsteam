@@ -18,6 +18,7 @@ const STATUS_LABELS = {
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'canceled', 'interrupted']);
 const CANCELABLE_STATUSES = new Set(['queued', 'running', 'waiting_permission']);
 const HISTORY_PAGE_SIZE = 100;
+const LIVE_EVENT_LIMIT = 256;
 const RECONNECT_DELAY_MS = 3000;
 const SELECTION_KEY = 'agentsteam.selection';
 const MODEL_CACHE_KEY = 'agentsteam.models.v1';
@@ -2009,7 +2010,7 @@ function subscribeEvents(context) {
     }
     if (state.source !== source) return;
     context.livePending = (context.livePending || 0) + 1;
-    if (context.livePending > 256) { context.livePending -= 1; handleStreamError(context); return; }
+    if (context.livePending > LIVE_EVENT_LIMIT) { context.livePending -= 1; handleStreamError(context); return; }
     context.liveChain = (context.liveChain || Promise.resolve())
       .then(() => receiveLiveEvent(row, context))
       .catch(error => handleLoadError(context, error))

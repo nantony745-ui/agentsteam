@@ -74,3 +74,4 @@ Codeg 只读参照：src-tauri/src/workspace_state/mod.rs 的 recent_capacity、
 - 反馈提取：增加仅覆盖 feedback.pulled 的 session/time 部分索引，保留按事件 ID 返回的语义。复用本库现有部分索引做法；适配 Python SQLite 查询，没有新增服务。2 项定向测试通过，覆盖 2,000 条无关事件、时间过滤与非时间顺序的反馈；另以 100,000 条无关事件验证索引过滤范围。
 - 队员技能 I/O：普通、团队和委派三个会话创建入口统一 await prepare_async，通过 asyncio.to_thread 执行快照；取消时等待线程结束后才清理绑定、释放 admission。参照 Codeg commands/custom_skills.rs 的技能包发现边界、commands/acp.rs 的 spawn_blocking 模式，保留本项目不可变快照。员工/团队/删除回归 36 项通过，新增慢扫描期间 HTTP 可响应与取消无晚到绑定的验证。
 - 记忆锁：生命周期锁只负责引擎取得与替换；引擎操作使用 2 个并发槽及活动租用计数，重配置/关闭等活动使用者退出后再关闭引擎。后台按单个操作协调修订/重试，重新读取操作状态，保持响应丢失和来源版本顺序；bank 首次初始化单独协调。复用现有 Hindsight 的有界并发与本库 outbox，不套用 Codeg 委派模型。39 项相关回归通过，新增慢 Reflect 不阻塞 Recall/修订/投递、并发上限、取消释放和生命周期等待测试。
+- 团队事件积压：主会话与团队共用 256 项预算，预算涵盖入口等待、未确认 delivery 和初次历史缓冲；超限断流，等待旧消费/初次加载排空后从确认游标重连。沿用本库主会话与 Codeg workspace_state 的有界缓存/游标恢复规则，保持其他窗口独立推进。新增慢窗超限、排空重连无重复和历史缓冲上限测试。

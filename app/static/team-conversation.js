@@ -54,7 +54,7 @@ class TeamConversation {
     this.root.addEventListener('pointerdown', () => owner.activate(this));
     this.root.addEventListener('focusin', () => owner.activate(this));
     this.timer = setInterval(() => this.update(), 1000);
-    this.load().catch(error => this.failure(error));
+    this.ready = this.load().catch(error => this.failure(error));
   }
   node(tag, className, text) { const value = document.createElement(tag); value.className = className; if (text != null) value.textContent = text; return value; }
   button(text, callback) {const button = this.node('button', '', text); button.type = 'button'; button.addEventListener('click', () => Promise.resolve().then(callback).catch(error => this.failure(error))); return button;}
@@ -143,7 +143,10 @@ class TeamConversation {
   }
   async process(row) {
     if (this.closed || row.id <= this.cursor) return;
-    if (this.loading) {this.buffer.push(row); return;}
+    if (this.loading) {
+      if (this.buffer.length >= LIVE_EVENT_LIMIT) throw new Error('历史加载期间事件积压，等待补拉');
+      this.buffer.push(row); return;
+    }
     const follow = this.timeline.scrollHeight - this.timeline.scrollTop - this.timeline.clientHeight < 100;
     if (row.run_id && !this.runs.has(row.run_id)) {
       const record = await api(`/api/runs/${row.run_id}?summary=true`);
