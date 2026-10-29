@@ -20,6 +20,7 @@ const CANCELABLE_STATUSES = new Set(['queued', 'running', 'waiting_permission'])
 const HISTORY_PAGE_SIZE = 100;
 const HISTORY_RUN_LIMIT = 60;
 const LIVE_EVENT_LIMIT = 256;
+const TEXT_RENDER_BUDGET = {interval:100, characters:16384, maximumInterval:1000};
 const RECONNECT_DELAY_MS = 3000;
 const SELECTION_KEY = 'agentsteam.selection';
 const MODEL_CACHE_KEY = 'agentsteam.models.v1';
@@ -112,10 +113,17 @@ function cancelTextFlush(target) {
 
 function scheduleTextFlush(target, flush) {
   if (target.textTimer !== null || target.textFrame !== null) return;
+  let length = 0;
+  for (const block of target.dirtyText) {
+    const text = target.textBlocks ? target.textBlocks.get(block)?.text : block.text;
+    length = Math.max(length, text?.length || 0);
+  }
+  const delay = Math.min(TEXT_RENDER_BUDGET.maximumInterval,
+    TEXT_RENDER_BUDGET.interval * Math.max(1, Math.ceil(length / TEXT_RENDER_BUDGET.characters)));
   target.textTimer = setTimeout(() => {
     target.textTimer = null;
     target.textFrame = requestAnimationFrame(flush);
-  }, 100);
+  }, delay);
 }
 
 function flushTextUpdates() {

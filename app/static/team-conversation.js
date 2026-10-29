@@ -238,7 +238,7 @@ class TeamConversation {
         run.items.append(root); run.text = {root, body, channel:payload.channel, text:''}; run.segments.push(run.text);
       }
       run.text.text += payload.text; this.dirtyText.add(run.text);
-      if (!this.loading) scheduleTextFlush(this, () => this.flushText());
+      if (!this.loading && !this.replaying) scheduleTextFlush(this, () => this.flushText());
     } else if (row.kind === 'agent.tool') {
       const key = `${row.run_id}:${payload.toolCallId}`;
       let tool = this.tools.get(key);
