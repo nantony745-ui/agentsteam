@@ -1,3 +1,5 @@
+import asyncio
+import threading
 from uuid import uuid4
 from pathlib import Path
 
@@ -245,3 +247,38 @@ async def test_failed_session_creation_removes_binding(tmp_path, repository, mon
             response = await api.post("/api/sessions", json={"project_id": project["id"], "employee_id": employee["employee_id"]})
             assert response.status_code == 409
             assert not list(app.state.employees.root.glob("*/sessions/*/binding.json"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('cancel', [False, True])
+async def test_preparing_skills_does_not_block_http_and_cancellation_cleans_binding(tmp_path, repository, monkeypatch, cancel):
+    app = create_app(tmp_path / 'prepare.db', EmployeeFactory())
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://test') as api:
+            project = (await api.post('/api/projects', json={'path': str(repository)})).json()
+            employee = (await api.post('/api/employees', json={'name': '甲', 'harness': 'codex'})).json()
+            entered, release = threading.Event(), threading.Event()
+            original = app.state.employees.prepare
+            def slow_prepare(*args):
+                entered.set()
+                assert release.wait(5)
+                return original(*args)
+            monkeypatch.setattr(app.state.employees, 'prepare', slow_prepare)
+            request = asyncio.create_task(api.post('/api/sessions', json={'project_id': project['id'], 'employee_id': employee['employee_id']}))
+            try:
+                assert await asyncio.to_thread(entered.wait, 5)
+                assert (await asyncio.wait_for(api.get('/api/projects'), 1)).status_code == 200
+                if cancel:
+                    request.cancel()
+                    await asyncio.sleep(0)
+                    assert not request.done() and app.state.employees.admission.locked()
+            finally:
+                release.set()
+            if cancel:
+                with pytest.raises(asyncio.CancelledError):
+                    await request
+                assert not app.state.employees.bindings
+                assert not list(app.state.employees.root.glob('*/sessions/*/binding.json'))
+            else:
+                assert (await request).status_code == 201
+                assert len(app.state.employees.bindings) == 1

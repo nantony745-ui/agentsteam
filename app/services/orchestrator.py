@@ -398,7 +398,7 @@ class Orchestrator:
         try:
             if not reuse:
                 settings = await self.storage.get_harness_settings(profile["harness"])
-                self.employees.prepare(data.employee_id, child_id, settings, Path(cwd), await self.teams.context(team, data.employee_id))
+                await self.employees.prepare_async(data.employee_id, child_id, settings, Path(cwd), await self.teams.context(team, data.employee_id))
             task, child, run, created = await self.storage.create_task_with_run(parent_id, resolved, child_id, reuse)
         except BaseException:
             if not reuse and await self.storage.get_session(child_id) is None:

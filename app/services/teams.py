@@ -185,7 +185,7 @@ class Teams:
         project = await self.storage.get_project(body.project_id)
         settings = await self.storage.get_harness_settings(profile["harness"])
         try:
-            self.employees.prepare(body.employee_id, session_id, settings, Path(project["path"]),
+            await self.employees.prepare_async(body.employee_id, session_id, settings, Path(project["path"]),
                                    await self.context(team, body.employee_id))
             async with self.storage.transaction() as db:
                 await db.execute("INSERT INTO sessions(id,project_id,parent_id,harness,cwd,created_at) VALUES (?,?,?,?,?,?)",

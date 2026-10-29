@@ -253,6 +253,15 @@ class Employees:
         self.bindings[session_id] = path
         return binding
 
+    async def prepare_async(self, employee_id: str, session_id: str, settings: dict, cwd: Path, team_context: str = "") -> dict:
+        preparing = asyncio.create_task(asyncio.to_thread(self.prepare, employee_id, session_id, settings, cwd, team_context))
+        try:
+            return await asyncio.shield(preparing)
+        except asyncio.CancelledError:
+            # 线程结束后再让调用方清理并释放 admission，避免晚到的快照恢复已取消绑定。
+            await asyncio.gather(preparing, return_exceptions=True)
+            raise
+
     def binding(self, session_id: str) -> dict | None:
         path = self.bindings.get(session_id)
         return json.loads(self._inside(path).read_text(encoding="utf-8")) if path else None

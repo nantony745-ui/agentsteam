@@ -72,3 +72,4 @@ Codeg 只读参照：src-tauri/src/workspace_state/mod.rs 的 recent_capacity、
 
 - 记忆重复存储：批次登记成功后同事务删除缓冲；启动迁移清理旧版已提交缓冲，幂等检查继续使用稳定来源 ID。复用本项目 MemoryStore/outbox 的来源与事务规则，Codeg 无对应长期记忆后端。记忆与个人记忆回归 29 项通过，覆盖旧缓冲、重启防重、未满批次与回滚。
 - 反馈提取：增加仅覆盖 feedback.pulled 的 session/time 部分索引，保留按事件 ID 返回的语义。复用本库现有部分索引做法；适配 Python SQLite 查询，没有新增服务。2 项定向测试通过，覆盖 2,000 条无关事件、时间过滤与非时间顺序的反馈；另以 100,000 条无关事件验证索引过滤范围。
+- 队员技能 I/O：普通、团队和委派三个会话创建入口统一 await prepare_async，通过 asyncio.to_thread 执行快照；取消时等待线程结束后才清理绑定、释放 admission。参照 Codeg commands/custom_skills.rs 的技能包发现边界、commands/acp.rs 的 spawn_blocking 模式，保留本项目不可变快照。员工/团队/删除回归 36 项通过，新增慢扫描期间 HTTP 可响应与取消无晚到绑定的验证。

@@ -95,7 +95,7 @@ def create_router(stream_settings: StreamSettings) -> APIRouter:
                         raise ValueError("请先配置队员的 Harness")
                     load_argv(profile["harness"])
                     settings = await storage.get_harness_settings(profile["harness"])
-                    employees.prepare(body.employee_id, session_id, settings, Path(project["path"]))
+                    await employees.prepare_async(body.employee_id, session_id, settings, Path(project["path"]))
                     body = SessionCreate(project_id=body.project_id, harness=profile["harness"])
                 load_argv(body.harness)
                 result = await storage.create_session(body, session_id)
