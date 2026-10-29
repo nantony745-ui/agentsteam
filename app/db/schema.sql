@@ -43,6 +43,8 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS events_project ON events(project_id,id);
 CREATE INDEX IF NOT EXISTS events_session ON events(session_id,id);
+CREATE INDEX IF NOT EXISTS events_feedback_time ON events(session_id,created_at,id)
+  WHERE kind='feedback.pulled';
 CREATE INDEX IF NOT EXISTS events_session_title ON events(session_id,id)
   WHERE kind IN ('session.title','raw');
 CREATE INDEX IF NOT EXISTS events_session_metadata ON events(session_id,kind,id)

@@ -13,7 +13,7 @@ from app.domain.models import MessageCreate, RunStatus, SessionCreate
 from app.main import create_app
 from app.memory.service import MemoryService
 from app.memory.config import default_config, merge_config, public_config
-from app.memory.storage import capture_completed_run
+from app.memory.storage import capture_completed_run, completed_run_content
 from app.memory.engine.hindsight import BANK, HindsightEngine
 from test_storage import repository, project_input
 
@@ -70,6 +70,34 @@ async def complete_turn(storage, session_id, prompt):
     await storage.append_event(run['id'], 'agent.text', {'channel': 'message', 'text': f'回复：{prompt}'})
     assert await storage.transition_run(run['id'], {RunStatus.RUNNING}, RunStatus.COMPLETED, {})
     return run
+
+
+@pytest.mark.asyncio
+async def test_feedback_capture_uses_time_index_and_preserves_event_order(memory, repository):
+    storage = memory.storage
+    project = await storage.create_project(project_input(repository))
+    session = await storage.create_session(SessionCreate(project_id=project['id'], harness='codex'))
+    async with storage.transaction() as db:
+        await db.executemany(
+            'INSERT INTO events(project_id,session_id,kind,payload,created_at) VALUES (?,?,?,?,?)',
+            [(project['id'], session['id'], 'agent.text', '{}', '2026-10-29T12:00:00Z')] * 2000,
+        )
+        for text, hour in [('旧补充', '09'), ('第一条', '13'), ('第二条', '11'), ('晚补充', '15')]:
+            await db.execute(
+                'INSERT INTO events(project_id,session_id,kind,payload,created_at) VALUES (?,?,?,?,?)',
+                (project['id'], session['id'], 'feedback.pulled', json.dumps({'message': text}), f'2026-10-29T{hour}:00:00Z'),
+            )
+        query = "SELECT payload FROM events WHERE session_id=? AND kind='feedback.pulled' AND created_at>=? AND created_at<=? ORDER BY id"
+        parameters = (session['id'], '2026-10-29T10:00:00Z', '2026-10-29T14:00:00Z')
+        async with db.execute('EXPLAIN QUERY PLAN ' + query, parameters) as cursor:
+            plan = ' '.join(row['detail'] for row in await cursor.fetchall())
+        assert 'events_feedback_time' in plan and 'created_at>?' in plan
+        content, _ = await completed_run_content(db, {
+            'id': 'synthetic', 'session_id': session['id'], 'task_id': None, 'prompt': '任务',
+            'started_at': parameters[1], 'finished_at': parameters[2],
+        })
+    assert content.index('第一条') < content.index('第二条')
+    assert '旧补充' not in content and '晚补充' not in content
 
 
 @pytest.mark.asyncio
