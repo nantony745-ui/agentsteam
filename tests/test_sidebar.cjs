@@ -174,14 +174,14 @@ test('摘要并发旧响应和标题事件之前的快照不能覆盖新数据�
   })()`);
 });
 
-test('新建会话进入草稿不请求后端，在输入框选项目和 Agent，首次发送才创建', async () => {
+test('新建草稿只读取模型配置，在输入框选项目和 Agent，首次发送才创建', async () => {
   const env = sidebar();
   await env.run(`(async () => {
     bindEvents(); let requests = 0;
-    api = async () => { requests++; throw new Error('新建草稿不应发请求'); };
+    api = async url => { if (url === '/api/settings/harnesses') return []; requests++; throw new Error('新建草稿不应创建会话'); };
     await createSession({preventDefault() {}});
     if (requests || state.context || !state.draft) throw new Error('没有进入草稿');
-    if ($('#agent-choice').hidden || $('#project-select').hidden || !$('#composer-agent').hidden) throw new Error('草稿控件位置错误');
+    if ($('#agent-choice').hidden || $('#project-select').hidden || $('#composer-agent').hidden) throw new Error('草稿控件位置错误');
     $('#harness').emit('change', {target: {value: 'codebuddy'}});
     $('#project-select').emit('change', {target: {value: 'q'}});
     if (state.draft.harness !== 'codebuddy' || state.draft.projectId !== 'q') throw new Error('草稿选择丢失');
@@ -200,7 +200,7 @@ test('新建会话进入草稿不请求后端，在输入框选项目和 Agent�
     if (calls[0].body.project_id !== 'q' || calls[0].body.harness !== 'codebuddy') throw new Error('没有采用输入框选择');
     if (calls[1].body.message !== '第一条提问' || calls[1].body.request_id !== 'stable-request') throw new Error('首条消息错误');
     if (state.draft || !$('#agent-choice').hidden || !$('#project-select').hidden || $('#composer-agent').hidden) throw new Error('已有会话仍可选 Agent');
-    if ($('#composer-agent').textContent !== 'CodeBuddy') throw new Error('已有会话 Agent 错误');
+    if ($('#composer-agent').textContent !== 'CodeBuddy 默认模型') throw new Error('已有会话 Agent 错误');
   })()`);
 });
 
@@ -238,7 +238,7 @@ test('创建失败保留草稿；切换后迟到的创建结果不污染新会�
     api = async () => { throw new Error('创建失败'); };
     await sendMessage({preventDefault() {}});
     if (!state.draft || state.draft.creating || $('#message-input').value !== '保留原文') throw new Error('失败丢失草稿');
-    let finish; api = () => new Promise(resolve => {finish = resolve;});
+    let finish; api = url => url === '/api/settings/harnesses' ? Promise.resolve([]) : new Promise(resolve => {finish = resolve;});
     globalThis.crypto = {randomUUID: () => 'stable-request'};
     let background;
     submitPending = async pending => { background = pending; };

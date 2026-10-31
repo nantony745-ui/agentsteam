@@ -80,6 +80,23 @@ async function run() {
       const result = await send('Page.captureScreenshot',{format:'png'});
       const file = path.join(directory,name+'.png');fs.writeFileSync(file,Buffer.from(result.data,'base64'));return file;
     };
+    const verifyComposer = async selector => {
+      const measurements = await evaluate(`(async()=>{
+        await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
+        const input=document.querySelector(${JSON.stringify(selector)}), saved=input.value;
+        const resize=value=>{input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}));return input.getBoundingClientRect().height;};
+        const short=resize('一行'),medium=resize(Array(6).fill('逐行增高').join('\\n'));
+        const long=resize(Array(60).fill('长内容会在上限内滚动').join('\\n'));
+        const toolbar=input.parentElement.querySelector('.composer-toolbar'),button=toolbar.querySelector('.send-button');
+        const result={short,medium,long,scrolls:input.scrollHeight>input.clientHeight,rightGap:toolbar.getBoundingClientRect().right-button.getBoundingClientRect().right};
+        await new Promise(requestAnimationFrame);
+        resize(saved);return result;
+      })()`);
+      assert.ok(measurements.medium>measurements.short,JSON.stringify(measurements));
+      assert.ok(measurements.long>measurements.medium && measurements.long<=240,JSON.stringify(measurements));
+      assert.equal(measurements.scrolls,true);
+      assert.ok(Math.abs(measurements.rightGap)<2,JSON.stringify(measurements));
+    };
     await send('Runtime.enable');
     await send('Page.enable');
     await send('Page.addScriptToEvaluateOnNewDocument',{source:"window.fixtureSources=[];const NativeSource=EventSource;window.EventSource=class extends NativeSource{constructor(...args){super(...args);window.fixtureSources.push(this);}};"});
@@ -91,6 +108,15 @@ async function run() {
     const teamRepo=path.join(directory,'team-repo'); fs.mkdirSync(teamRepo);
     for (const args of [['init'],['-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','--allow-empty','-m','fixture']]) execFileSync('git',args,{cwd:teamRepo,windowsHide:true,stdio:'pipe'});
     await until(()=>evaluate("typeof TeamWorkspace!=='undefined' && state.projects.length===1"));
+    await evaluate(`selectProject(${JSON.stringify(fixture.project.id)})`);
+    await until(()=>evaluate("document.querySelector('#composer-agent').textContent==='Codex m1'"));
+    await verifyComposer('#message-input');
+    results.push({view:'main-composer-before-prompt',screenshot:await screenshot('main-composer-before-prompt')});
+    await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+    await verifyComposer('#message-input');
+    assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true);
+    results.push({view:'main-composer-mobile',screenshot:await screenshot('main-composer-mobile')});
+    await send('Emulation.setDeviceMetricsOverride',{width:1833,height:1000,deviceScaleFactor:1,mobile:false});
     await evaluate("location.hash='#settings/teams'");
     await until(()=>evaluate("document.querySelectorAll('#team-candidates .team-member-row').length===5"));
     assert.equal(await evaluate("document.querySelectorAll('#team-candidates button[disabled]').length"),1);
@@ -116,6 +142,14 @@ async function run() {
     assert.equal(await evaluate("document.querySelectorAll('.team-pane:not([hidden])').length"),3);
     assert.equal(await evaluate("[...document.querySelectorAll('.team-pane')].every(pane=>pane.getBoundingClientRect().width>=395)"),true);
     assert.equal(await evaluate("document.querySelector('.conversation').hidden"),true);
+    assert.equal(await evaluate("[...document.querySelectorAll('.team-pane .composer-agent')].every(node=>node.textContent.endsWith(' fast'))"),true);
+    await verifyComposer('.team-pane textarea');
+    await evaluate("document.querySelector('.team-pane textarea').value=Array(30).fill('刷新后仍恢复输入框高度').join('\\n');document.querySelector('.team-pane textarea').dispatchEvent(new Event('input',{bubbles:true}));localStorage.removeItem('agentsteam.models.v1')");
+    await send('Page.reload');
+    await until(()=>evaluate("document.querySelectorAll('.team-pane').length===3 && [...document.querySelectorAll('.team-pane textarea')].every(input=>!input.disabled)"));
+    await until(()=>evaluate("document.querySelector('.team-pane textarea').getBoundingClientRect().height===240"));
+    assert.equal(await evaluate("[...document.querySelectorAll('.team-pane .composer-agent')].every(node=>node.textContent.endsWith(' fast'))"),true);
+    results.push({view:'team-composer-persisted',screenshot:await screenshot('team-composer-persisted')});
     await evaluate("document.querySelectorAll('.team-pane textarea').forEach((input,i)=>{input.value='独立草稿 '+i;input.dispatchEvent(new Event('input'))})");
     const sessionIds=await evaluate("[...document.querySelectorAll('.team-pane')].map(pane=>pane.dataset.sessionId)");
     await evaluate("document.querySelectorAll('.team-pane')[0].querySelector('.send-button').click()");
@@ -133,6 +167,7 @@ async function run() {
       return (await response.json()).ok;
     });
     await until(()=>evaluate("[...document.querySelectorAll('.team-pane')].every((pane,i)=>pane.textContent.includes('窗口隔离证据 '+i))"));
+    assert.equal(await evaluate("[...document.querySelectorAll('.team-pane')].every(pane=>{const stop=pane.querySelector('.composer-stop'),send=pane.querySelector('.send-button');return !stop.hidden && stop.parentElement===send.parentElement && stop.getBoundingClientRect().right<=send.getBoundingClientRect().left;})"),true);
     assert.equal(await evaluate("document.querySelectorAll('.team-pane')[0].textContent.includes('窗口隔离证据 1')"),false);
     assert.equal(await evaluate("document.querySelectorAll('.team-pane')[1].textContent.includes('窗口隔离证据 2')"),false);
     assert.equal(await evaluate("[...document.querySelectorAll('.team-pane')].every(pane=>pane.querySelectorAll('.tool-card').length===1)"),true);
@@ -170,6 +205,7 @@ async function run() {
     results.push({view:'two-or-one-columns',screenshot:await screenshot('teams-medium')});
     await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
     await until(()=>evaluate("document.querySelectorAll('.team-pane:not([hidden])').length===1"));
+    await verifyComposer('.team-pane:not([hidden]) textarea');
     assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true);
     results.push({view:'mobile',screenshot:await screenshot('teams-mobile')});
     await evaluate("document.querySelector('#open-employees').click()");

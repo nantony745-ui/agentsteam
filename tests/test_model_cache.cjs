@@ -4,6 +4,32 @@ const { environment } = require('./frontend_dom.cjs');
 
 const cacheKey = 'agentsteam.models.v1';
 
+test('未发送消息的会话优先显示配置模型，不误用同 Harness 其他会话模型', () => {
+  const env = environment();
+  select(env, 'other', 'codex'); confirm(env, 20, 'other-model');
+  env.run(`renderSessionDetail({id:'new', project_id:'p', harness:'codex', configured_model:'configured-model'});`);
+  assert.equal(env.get('#composer-agent').textContent, 'Codex configured-model');
+  assert.equal(env.get('#composer-agent').hidden, false);
+});
+
+test('草稿配置在发送前显示，员工覆盖全局模型，迟到响应不覆盖新选择', async () => {
+  const env = environment();
+  await env.run(`(async()=>{
+    state.draft={projectId:'p',harness:'codex',employeeId:'e'};
+    api=async url=>url==='/api/settings/harnesses'?[{id:'codex',settings:{config_values:{model:'global'}}}]:{config_values:{model:'employee'}};
+    await refreshDraftModel();
+    if($('#composer-agent').hidden || !$('#composer-agent').textContent.includes('employee'))throw Error('未显示员工模型');
+    let finish;api=()=>new Promise(resolve=>{finish=resolve;});
+    state.draft={projectId:'p',harness:'codex'};
+    const previous=refreshDraftModel();
+    state.draft={projectId:'p',harness:'opencode'};
+    api=async()=>[{id:'opencode',settings:{config_values:{model:'new'}}}];
+    await refreshDraftModel();
+    finish([{id:'codex',settings:{config_values:{model:'stale'}}}]);await previous;
+  })()`);
+  assert.equal(env.get('#composer-agent').textContent, 'OpenCode new');
+});
+
 function select(env, sessionId, harness = 'opencode', projectId = 'p') {
   env.run(`
     resetConversation();
@@ -40,9 +66,9 @@ test('新会话沿用本项目同 Agent 最近确认模型，其他项目和 Age
   select(env, 'new-session');
   assert.equal(env.get('#composer-agent').textContent, 'OpenCode zerocat/glm-5.3');
   select(env, 'codex-session', 'codex');
-  assert.equal(env.get('#composer-agent').textContent, 'Codex');
+  assert.equal(env.get('#composer-agent').textContent, 'Codex 默认模型');
   select(env, 'another-project-session', 'opencode', 'other-project');
-  assert.equal(env.get('#composer-agent').textContent, 'OpenCode');
+  assert.equal(env.get('#composer-agent').textContent, 'OpenCode 默认模型');
 });
 
 test('真实模型变化立即替换缓存；重放较旧记录不能使本会话模型回退', () => {
@@ -85,7 +111,7 @@ test('旧上下文或其他会话的模型事件不污染当前显示和持久�
     payload: {model_id: 'stale'}}, previous);
     applyEvent({id: 31, project_id: 'p', session_id: 's', kind: 'session.model',
     payload: {model_id: 'wrong-session'}}, state.context);`);
-  assert.equal(env.get('#composer-agent').textContent, 'Codex');
+  assert.equal(env.get('#composer-agent').textContent, 'Codex 默认模型');
   assert.equal(env.storage.get(cacheKey), saved);
 });
 
@@ -94,7 +120,7 @@ test('损坏缓存或浏览器禁用存储不影响页面与实际模型更新',
   for (const value of ['{broken', 'null', '42', '[]', '{"session:s":{"modelId":{"bad":true},"eventId":9,"harness":"opencode","projectId":"p"}}']) {
     env.storage.set(cacheKey, value);
     select(env, 's');
-    assert.equal(env.get('#composer-agent').textContent, 'OpenCode');
+    assert.equal(env.get('#composer-agent').textContent, 'OpenCode 默认模型');
   }
   env.run(`localStorage.getItem = () => {throw new Error('disabled');};
     localStorage.setItem = () => {throw new Error('disabled');};`);

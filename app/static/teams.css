@@ -41,8 +41,8 @@
 .team-pane-heading strong { font-size:12px; font-weight:550; white-space:nowrap; }.team-pane-heading select { flex:1; min-width:0; max-width:200px; border:0; font-size:11px; background:#f6f6f8; border-radius:12px; padding:5px; }
 .team-pane-heading button { border:0; background:transparent; padding:3px 5px; color:var(--muted); font-size:13px; }
 .team-pane .timeline { flex:1; min-height:0; padding:22px 18px; }.team-pane .run { margin-bottom:24px; }.team-pane .run-content { gap:14px; }
-.team-pane .message-form { padding:12px 14px 8px; flex-shrink:0; }.team-pane textarea { width:100%; min-height:48px; max-height:180px; resize:vertical; padding:8px 0; border:0; outline:none; background:transparent; font-size:13px; }
-.team-pane .composer-toolbar { gap:6px; }.team-pane .composer-agent { font-size:11px; }.team-pane .form-error { font-size:11px; margin:4px 0; }
+.team-pane .message-form { padding:12px 14px 8px; flex-shrink:0; }.team-pane .composer > textarea { padding:8px 0; font-size:13px; }
+.team-pane .composer-toolbar { gap:6px; flex-wrap:nowrap; }.team-pane .composer-agent { font-size:11px; }.team-pane .form-error { font-size:11px; margin:4px 0; }
 .team-pane-stream { padding:3px 16px; color:var(--muted); font-size:10px; min-height:20px; }
 .team-pane .welcome h2 { font-size:19px; }.team-pane .welcome { padding:32px 0; }.team-pane .user-message { max-width:100%; }
 .team-pane .run-error { font-size:12px; }.team-pane .permission-card { margin:8px 0; }

@@ -113,6 +113,7 @@ const EmployeesUI = (() => {
         state.draft.employeeId = record?.employee_id || null;
         state.draft.harness = record ? record.harness : q('#harness').value;
         renderChoice();
+        refreshDraftModel();
       });
     }
     select.replaceChildren(new Option('直接选择 Harness', ''));
@@ -251,6 +252,7 @@ const EmployeesUI = (() => {
       return;
     }
     state.draft.employeeId = current.employee_id; state.draft.harness = current.harness;
+    refreshDraftModel();
     renderChoice(); q('#message-input').focus();
   }
   function confirmDelete() {
@@ -274,6 +276,7 @@ const EmployeesUI = (() => {
       records = records.filter(record => record.employee_id !== deleteTarget.employee_id);
       if (state.draft?.employeeId === deleteTarget.employee_id) {
         state.draft.employeeId = null; state.draft.harness = q('#harness').value;
+        refreshDraftModel();
       }
       renderChoice(); renderList();
       if (records.length) await select(records[0]);

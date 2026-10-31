@@ -26,8 +26,9 @@ original = app.router.lifespan_context
 async def lifespan(application):
     async with original(application):
         project = await app.state.storage.create_project(ProjectCreate(path=str(directory / "repo")))
+        await app.state.storage.save_harness_settings("codex", {"model": "m1"})
         employees = [app.state.employees.create(EmployeeInput(name=name, role=role, harness=harness,
-                     instructions="先阅读代码，提供证据与验证结果。")) for name, role, harness in (
+                     config_values={"model":"fast"}, instructions="先阅读代码，提供证据与验证结果。")) for name, role, harness in (
             ("林舟", "团队负责人", "codex"), ("陈墨", "研发工程师", "opencode"),
             ("许知", "质量核验", "deepseek"), ("苏禾", "交互设计", "codebuddy"))]
         app.state.employees.create(EmployeeInput(name="待配置员工"))

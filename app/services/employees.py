@@ -275,6 +275,7 @@ class Employees:
         binding = self.binding(session["id"])
         return {**session, "employee_id": binding["employee_id"] if binding else None,
                 "employee_name": binding["name"] if binding else None,
+                "configured_model": binding.get("settings", {}).get("config_values", {}).get("model") if binding else None,
                 "employee_warnings": binding["warnings"] if binding else []}
 
     def record_run(self, binding: dict, run_id: str) -> None:

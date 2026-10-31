@@ -39,11 +39,13 @@ class TeamConversation {
       if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) {event.preventDefault(); this.send();}
     });
     const toolbar = this.node('div', 'composer-toolbar');
-    this.model = this.node('span', 'composer-agent', agentLabel(session.harness));
+    this.modelId = cachedSessionModel(session.id, session.harness, session.project_id, session.configured_model);
+    this.model = this.node('span', 'composer-agent'); this.renderModel();
     this.mode = collaborationSelector(session.id, session.harness, null);
     this.sendButton = this.button('↑', () => this.send()); this.sendButton.className = 'send-button'; this.sendButton.setAttribute('aria-label', '发送消息');
-    this.stopButton = this.button('■', () => this.stop()); this.stopButton.title = '停止本轮'; this.stopButton.hidden = true;
-    toolbar.append(this.model, this.mode, this.stopButton, this.sendButton); composer.append(this.input, toolbar);
+    this.stopButton = this.button('■', () => this.stop()); this.stopButton.className = 'composer-stop'; this.stopButton.title = '停止本轮'; this.stopButton.setAttribute('aria-label', '停止本轮'); this.stopButton.hidden = true;
+    const actions = this.node('div', 'composer-actions'); actions.append(this.stopButton, this.sendButton);
+    toolbar.append(this.model, this.mode, actions); composer.append(this.input, toolbar);
     this.error = this.node('p', 'form-error'); this.error.setAttribute('role', 'alert');
     this.retry = this.button('重试原消息', () => this.send()); this.retry.hidden = true;
     this.abandon = this.button('放弃本地重试', () => {this.clearPending();}); this.abandon.hidden = true;
@@ -52,6 +54,7 @@ class TeamConversation {
     form.addEventListener('submit', event => {event.preventDefault(); this.send();});
     this.status = this.node('div', 'team-pane-stream', '加载中…'); this.status.setAttribute('role', 'status');
     this.root.append(heading, this.timeline, form, this.status);
+    this.inputObserver = observeComposerInput(this.input);
     this.root.addEventListener('pointerdown', () => owner.activate(this));
     this.root.addEventListener('focusin', () => owner.activate(this));
     this.timer = null; this.visible = true; this.waitingRuns = new Set();
@@ -64,8 +67,12 @@ class TeamConversation {
   draftKey() {return `agentsteam.team.draft.${this.session.id}`;}
   pendingKey() {return `agentsteam.team.pending.${this.session.id}`;}
   saveDraft() {try {sessionStorage.setItem(this.draftKey(), this.input.value);} catch {}}
+  renderModel() {
+    this.model.textContent = `${agentLabel(this.session.harness)} ${this.modelId || '默认模型'}`;
+    this.model.title = this.modelId ? this.model.textContent : '使用 Harness 默认模型，连接后显示实际名称';
+  }
   clearPending(accepted = false) {
-    if (accepted) this.input.value = '';
+    if (accepted) {this.input.value = ''; resizeComposerInput(this.input);}
     this.pending = null; this.input.readOnly = false; this.retry.hidden = this.abandon.hidden = true;
     try {sessionStorage.removeItem(this.pendingKey());} catch {}
     this.saveDraft();
@@ -76,6 +83,8 @@ class TeamConversation {
     const [detail, page] = await Promise.all([api(`/api/sessions/${this.session.id}`), api(`/api/sessions/${this.session.id}/history`)]);
     if (this.closed || version !== this.revision) return;
     this.session = {...this.session, ...detail.session};
+    this.modelId = cachedSessionModel(this.session.id, this.session.harness, this.session.project_id, this.session.configured_model);
+    this.renderModel();
     const records = [...new Map([...page.runs,...page.active_runs].map(run => [run.id,run])).values()];
     for (const run of records) this.ensureRun(run.id, run);
     if (this.pending && records.some(run => run.request_id === this.pending.request_id)) this.clearPending(true);
@@ -222,7 +231,10 @@ class TeamConversation {
   }
   async apply(row) {
     if (this.closed || row.session_id !== this.session.id) return;
-    if (row.kind === 'session.model') {this.model.textContent = `${agentLabel(this.session.harness)} ${row.payload.model_id || row.payload.model || ''}`; return;}
+    if (row.kind === 'session.model') {
+      this.modelId = rememberSessionModel(row, {sessionId:this.session.id, projectId:this.session.project_id}, this.session.harness);
+      this.renderModel(); return;
+    }
     if (row.kind === 'session.config') {this.warning.textContent = (row.payload.warnings || []).map(item => item.reason).join('；'); return;}
     if (!row.run_id || !['user.message','agent.text','agent.tool','agent.plan','error','run.status','permission.requested','permission.answered','permission.expired','question.requested','question.answered','question.expired'].includes(row.kind)) return;
     const run = this.ensureRun(row.run_id, {created_at:this.runs.get(row.run_id)?.record.created_at || row.created_at});
@@ -443,6 +455,7 @@ class TeamConversation {
   }
   async stop() {if (this.activeRun) await api(`/api/runs/${this.activeRun.record.id}/cancel`, {method:'POST'});}
   destroy() {
+    this.inputObserver.disconnect();
     this.saveDraft(); this.closed = true; this.revision++; clearInterval(this.timer); cancelTextFlush(this);
     this.timer = null; document.removeEventListener('visibilitychange', this.visibilityChanged);
     for (const records of [this.runs, this.slots, this.tools, this.permissions, this.questions, this.dirtyText]) records.clear();

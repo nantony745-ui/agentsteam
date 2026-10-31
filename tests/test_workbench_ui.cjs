@@ -440,7 +440,7 @@ for (const [harness, label] of [['codebuddy', 'CodeBuddy'], ['deepseek', 'DeepSe
       renderSessionList();
       renderSessionDetail({id: 's', title: '调研智能体', harness: '${harness}', cwd: 'D:/demo', native_id: '${harness}-native'});
     })()`);
-    assert.equal(env.get('#composer-agent').textContent, label);
+    assert.equal(env.get('#composer-agent').textContent, `${label} 默认模型`);
     assert.equal(env.get('#session-title').textContent, '调研智能体');
     assert.equal(env.get('.session-button-title').textContent, '调研智能体');
   });
@@ -449,7 +449,7 @@ for (const [harness, label] of [['codebuddy', 'CodeBuddy'], ['deepseek', 'DeepSe
 test('输入区显示实际模型，元数据不进入聊天；切换会话和迟到事件不串模型', () => {
   const env = conversation();
   env.run("renderSessionDetail({id: 's', harness: 'codex'});");
-  assert.equal(env.get('#composer-agent').textContent, 'Codex');
+  assert.equal(env.get('#composer-agent').textContent, 'Codex 默认模型');
   env.event('session.model', { model_id: 'gpt-6.1-sol' });
   assert.equal(env.get('#composer-agent').textContent, 'Codex gpt-6.1-sol');
   assert.equal(env.get('#composer-agent').title, 'Codex gpt-6.1-sol');
@@ -461,7 +461,7 @@ test('输入区显示实际模型，元数据不进入聊天；切换会话和�
     renderSessionDetail({id: 'other', harness: 'codebuddy'});
     applyEvent({id: 100, project_id: 'p', session_id: 's', kind: 'session.model', payload: {model_id: 'stale'}}, oldContext);
     applyEvent({id: 101, project_id: 'p', session_id: 's', kind: 'session.model', payload: {model_id: 'wrong-session'}}, state.context);`);
-  assert.equal(env.get('#composer-agent').textContent, 'CodeBuddy');
+  assert.equal(env.get('#composer-agent').textContent, 'CodeBuddy 默认模型');
   env.run(`applyEvent({id: 1, project_id: 'p', session_id: 'other', kind: 'session.model', payload: {model_id: 'buddy-model'}}, state.context);`);
   assert.equal(env.get('#composer-agent').textContent, 'CodeBuddy buddy-model');
 });

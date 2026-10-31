@@ -246,6 +246,7 @@ function selectProject(projectId) {
   state.draft = { projectId: state.projectId, harness: $('#harness').value || 'codex', creating: false };
   $('#session-title').textContent = '新会话';
   renderComposerAgent();
+  refreshDraftModel();
   renderProjectContext();
   renderSessionList();
   saveSelection();
@@ -682,39 +683,61 @@ function validModelCache(entry, harness, projectId) {
     && Number.isSafeInteger(entry.eventId);
 }
 
-function cachedSessionModel(sessionId, harness, projectId) {
+function cachedSessionModel(sessionId, harness, projectId, configuredModel = null) {
   const cache = readModelCache();
-  for (const key of [`session:${sessionId}`, `agent:${projectId}:${harness}`]) {
-    if (validModelCache(cache[key], harness, projectId)) return cache[key].modelId;
-  }
-  return null;
+  const saved = cache[`session:${sessionId}`];
+  if (validModelCache(saved, harness, projectId)) return saved.modelId;
+  if (configuredModel) return configuredModel;
+  const recent = cache[`agent:${projectId}:${harness}`];
+  return validModelCache(recent, harness, projectId) ? recent.modelId : null;
 }
 
-function rememberSessionModel(row, context) {
-  state.modelId = row.payload.model_id;
-  const harness = state.harness;
-  if (!harness) return;
+function rememberSessionModel(row, context, harness) {
+  const modelId = row.payload.model_id || row.payload.model;
+  if (!harness || typeof modelId !== 'string' || !modelId.trim()) return cachedSessionModel(context.sessionId, harness, context.projectId);
   const cache = readModelCache();
-  const entry = { modelId: state.modelId, harness, projectId: context.projectId, eventId: row.id };
+  const entry = { modelId, harness, projectId: context.projectId, eventId: row.id };
   const sessionKey = `session:${context.sessionId}`;
   for (const key of [sessionKey, `agent:${context.projectId}:${harness}`]) {
     if (!validModelCache(cache[key], harness, context.projectId) || cache[key].eventId <= row.id) cache[key] = entry;
   }
-  state.modelId = cache[sessionKey].modelId;
   try {
     localStorage.setItem(MODEL_CACHE_KEY, JSON.stringify(cache));
   } catch { /* 存储不可用时仍显示本次 ACP 确认的模型 */ }
+  return cache[sessionKey].modelId;
+}
+
+async function refreshDraftModel() {
+  const draft = state.draft;
+  if (!draft) return;
+  const version = draft.modelVersion = (draft.modelVersion || 0) + 1;
+  draft.modelId = cachedSessionModel(null, draft.harness, draft.projectId);
+  renderComposerAgent();
+  try {
+    const [settings, employee] = await Promise.all([
+      api('/api/settings/harnesses'),
+      draft.employeeId ? api(`/api/employees/${draft.employeeId}`) : null,
+    ]);
+    if (state.draft !== draft || draft.modelVersion !== version) return;
+    draft.configuredModel = employee?.config_values?.model || settings.find(item => item.id === draft.harness)?.settings.config_values.model;
+    draft.modelId = draft.configuredModel || cachedSessionModel(null, draft.harness, draft.projectId);
+    renderComposerAgent();
+  } catch (error) {
+    if (state.draft === draft && draft.modelVersion === version) $('#composer-agent').title = `模型配置读取失败：${error.message}`;
+  }
 }
 
 function renderComposerAgent() {
   renderCollaborationMode();
-  const label = state.harness ? agentLabel(state.harness) : '未选择 Agent';
+  const harness = state.draft?.harness || state.harness;
+  const label = harness ? agentLabel(harness) : '未选择 Agent';
+  const modelId = state.draft ? state.draft.modelId : state.modelId;
   const element = $('#composer-agent');
-  element.textContent = state.modelId ? `${label} ${state.modelId}` : label;
+  element.textContent = harness ? `${label} ${modelId || '默认模型'}` : label;
   if (state.employeeName && !state.draft) element.textContent = `${state.employeeName} · ${element.textContent}`;
-  element.title = state.modelId ? element.textContent : `${label} · 模型待连接确认`;
+  element.title = modelId ? element.textContent : `${label} · 使用 Harness 默认模型，连接后显示实际名称`;
   $('#agent-choice').hidden = !state.draft;
-  element.hidden = Boolean(state.draft);
+  element.hidden = false;
   $('#project-select').hidden = !state.draft;
   $('#composer-project').hidden = Boolean(state.draft);
   $('#harness').disabled = Boolean(state.draft?.creating);
@@ -726,7 +749,7 @@ function renderSessionDetail(record) {
   $('#session-title').textContent = record.title || '新会话';
   state.harness = record.harness;
   state.employeeName = record.employee_name || null;
-  state.modelId = cachedSessionModel(record.id, record.harness, record.project_id || state.context?.projectId);
+  state.modelId = cachedSessionModel(record.id, record.harness, record.project_id || state.context?.projectId, record.configured_model);
   renderComposerAgent();
   $('#session-cwd').textContent = record.cwd || '';
   $('#session-cwd').title = record.cwd || '';
@@ -1649,7 +1672,7 @@ function renderEvent(row, context) {
     return;
   }
   if (row.kind === 'session.model') {
-    rememberSessionModel(row, context);
+    state.modelId = rememberSessionModel(row, context, state.harness);
     renderComposerAgent();
     return;
   }
@@ -2088,6 +2111,7 @@ function resetConversation() {
   setStreamStatus('等待选择会话', '');
   $('#stream-retry').hidden = true;
   $('#message-input').value = '';
+  resizeComposerInput($('#message-input'));
   $('#message-error').textContent = '';
   updateMessageForm();
 }
@@ -2373,7 +2397,10 @@ function updateMessageForm() {
   const retry = $('#retry-button');
   const discard = $('#discard-button');
   if (pending) {
-    input.value = pending.message; // 锁定正文
+    if (input.value !== pending.message) {
+      input.value = pending.message;
+      resizeComposerInput(input);
+    }
     input.readOnly = true;
     input.disabled = false;
     retry.hidden = false;
@@ -2414,7 +2441,10 @@ async function submitPending(pending) {
     state.sendingBySession.delete(pending.sessionId);
     // 仅当前上下文仍匹配才清空输入并更新右栏
     if (state.context && state.context.sessionId === pending.sessionId) {
-      if ($('#message-input').value === pending.message) $('#message-input').value = '';
+      if ($('#message-input').value === pending.message) {
+        $('#message-input').value = '';
+        resizeComposerInput($('#message-input'));
+      }
       $('#message-error').textContent = '';
       updateMessageForm();
       await refreshRun(submitted.run_id);
@@ -2758,6 +2788,7 @@ function bindEvents() {
     if (!state.draft || state.draft.creating) return;
     state.projectId = event.target.value || null;
     state.draft.projectId = state.projectId;
+    refreshDraftModel();
     renderProjectContext();
     renderSessionList();
     saveSelection();
@@ -2765,6 +2796,7 @@ function bindEvents() {
   });
   $('#harness').addEventListener('change', event => {
     if (state.draft && !state.draft.creating) state.draft.harness = event.target.value;
+    refreshDraftModel();
   });
   $('#project-form').addEventListener('submit', createProject);
   $('#session-form').addEventListener('submit', createSession);
@@ -2791,6 +2823,7 @@ function bindEvents() {
     followTimeline();
   });
   new ResizeObserver(followTimeline).observe($('#timeline'));
+  observeComposerInput($('#message-input'));
   $('#message-input').addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
@@ -2830,6 +2863,24 @@ async function init() {
   if (typeof HarnessSettingsUI !== 'undefined') HarnessSettingsUI.init(() => state.projectId);
 }
 
+
+function resizeComposerInput(input) {
+  input.style.height = 'auto';
+  input.style.height = `${input.scrollHeight}px`;
+}
+
+function observeComposerInput(input) {
+  input.addEventListener('input', () => resizeComposerInput(input));
+  let width = 0;
+  const observer = new ResizeObserver(() => {
+    if (input.clientWidth !== width) {
+      width = input.clientWidth;
+      if (width) resizeComposerInput(input);
+    }
+  });
+  observer.observe(input);
+  return observer;
+}
 
 function collaborationSelector(sessionId, harness, actual) {
   const select = document.createElement('select');

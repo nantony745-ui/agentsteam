@@ -145,6 +145,9 @@ def create_router(stream_settings: StreamSettings) -> APIRouter:
         storage = request.app.state.storage
         record = await require_record(await storage.get_session_summary(session_id))
         record = request.app.state.employees.decorate(record)
+        if not record["employee_id"]:
+            settings = await storage.get_harness_settings(record["harness"])
+            record["configured_model"] = settings["config_values"].get("model")
         task = await storage.get_session_task(session_id)
         fields = ("id", "status", "base_sha", "base_branch", "branch", "worktree")
         task_detail = {key: task[key] for key in fields} if task is not None else None

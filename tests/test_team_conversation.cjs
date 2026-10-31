@@ -23,6 +23,28 @@ function setup() {
   return env;
 }
 
+test('团队窗持久化实际模型，重开无需发送，较旧历史与其他会话事件不覆盖', async () => {
+  const env = setup();
+  await env.run(`first.apply({id:20,session_id:'one',kind:'session.model',payload:{model_id:'actual-model'}})`);
+  env.run(`first.destroy();globalThis.reopened=new TeamConversation({id:'one',project_id:'p',harness:'codex',configured_model:'configured'},member,owner);`);
+  assert.equal(env.run('reopened.model.textContent'), 'Codex actual-model');
+  await env.run(`reopened.apply({id:10,session_id:'one',kind:'session.model',payload:{model_id:'older'}})`);
+  await env.run(`reopened.apply({id:30,session_id:'two',kind:'session.model',payload:{model_id:'other'}})`);
+  assert.equal(env.run('reopened.model.textContent'), 'Codex actual-model');
+  assert.equal(env.run('state.modelId'), null);
+});
+
+test('团队首屏从启动配置恢复模型，不需要模型事件或运行记录', async () => {
+  const env = setup();
+  await env.run(`(async()=>{
+    api=async url=>url.endsWith('/history')?{runs:[],active_runs:[],metadata:[],high_watermark:0,before:null}:{session:{configured_model:'snapshot-model'},interactions:[]};
+    first.readEvents=async()=>{};
+    await originalLoad.call(first);
+  })()`);
+  assert.equal(env.run('first.model.textContent'), 'Codex snapshot-model');
+  assert.equal(env.run('first.runs.size'), 0);
+});
+
 test('完整历史未超预算时不读取布局，避免终态额外同步排版', () => {
   const env = setup();
   env.run(`

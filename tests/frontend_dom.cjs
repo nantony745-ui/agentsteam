@@ -183,7 +183,7 @@ function environment(width = 1440, saved = null) {
     requestAnimationFrame: handler => { frames.set(++frameId, handler); return frameId; },
     cancelAnimationFrame: id => frames.delete(id),
     localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
-    ResizeObserver: class { observe() {} },
+    ResizeObserver: class { observe() {} disconnect() {} },
   });
   for (const file of ['vendor/markdown-it.umd.min.js', 'layout.js', 'app.js']) {
     let source = fs.readFileSync(path.join(__dirname, '../app/static', file), 'utf8');
