@@ -42,9 +42,8 @@ class TeamConversation {
     this.modelId = cachedSessionModel(session.id, session.harness, session.project_id, session.configured_model);
     this.model = this.node('span', 'composer-agent'); this.renderModel();
     this.mode = collaborationSelector(session.id, session.harness, null);
-    this.sendButton = this.button('↑', () => this.send()); this.sendButton.className = 'send-button'; this.sendButton.setAttribute('aria-label', '发送消息');
-    this.stopButton = this.button('■', () => this.stop()); this.stopButton.className = 'composer-stop'; this.stopButton.title = '停止本轮'; this.stopButton.setAttribute('aria-label', '停止本轮'); this.stopButton.hidden = true;
-    const actions = this.node('div', 'composer-actions'); actions.append(this.stopButton, this.sendButton);
+    this.sendButton = this.button('↑', () => this.activeRun ? this.stop() : this.send()); this.sendButton.className = 'send-button'; this.sendButton.setAttribute('aria-label', '发送消息');
+    const actions = this.node('div', 'composer-actions'); actions.append(this.sendButton);
     toolbar.append(this.model, this.mode, actions); composer.append(this.input, toolbar);
     this.error = this.node('p', 'form-error'); this.error.setAttribute('role', 'alert');
     this.retry = this.button('重试原消息', () => this.send()); this.retry.hidden = true;
@@ -417,11 +416,15 @@ class TeamConversation {
       if (['running','waiting_permission','cancel_requested'].includes(run.record.status)) active = run;
       else if (!active && run.record.status === 'queued') active = run;
     }
-    this.activeRun = active; this.stopButton.hidden = !active;
+    this.activeRun = active;
     this.syncTimer();
     for (const run of this.runs.values()) updatePlanActions(run.root, run.record.status === 'completed' && !active && !this.loading && !this.sending && !this.pending);
     this.mode.disabled = Boolean(this.pending || this.sending);
-    this.sendButton.disabled = this.loading || Boolean(this.sending);
+    const stopping = Boolean(this.canceling || active?.record.status === 'cancel_requested');
+    this.sendButton.textContent = active ? '■' : '↑';
+    this.sendButton.title = active ? (stopping ? '正在停止' : '停止本轮') : '发送消息';
+    this.sendButton.setAttribute('aria-label', this.sendButton.title);
+    this.sendButton.disabled = this.loading || (active ? stopping : Boolean(this.sending));
     const sessions = this.owner.roster.sessions.filter(item => item.employee_id === this.member.profile.employee_id);
     const signature = JSON.stringify(sessions.map(item => [item.id,item.title]));
     if (signature !== this.sessionOptions) {
@@ -453,7 +456,15 @@ class TeamConversation {
     } catch (error) {this.failure(error); this.retry.hidden = this.abandon.hidden = false;}
     finally {this.sending = false; this.update();}
   }
-  async stop() {if (this.activeRun) await api(`/api/runs/${this.activeRun.record.id}/cancel`, {method:'POST'});}
+  async stop() {
+    const run = this.activeRun;
+    if (!run || this.canceling || run.record.status === 'cancel_requested') return;
+    this.canceling = true; this.error.textContent = ''; this.update();
+    try {
+      const record = await api(`/api/runs/${run.record.id}/cancel`, {method:'POST'});
+      if (!this.closed && !TERMINAL_STATUSES.has(run.record.status)) Object.assign(run.record, record);
+    } finally {this.canceling = false; this.update();}
+  }
   destroy() {
     this.inputObserver.disconnect();
     this.saveDraft(); this.closed = true; this.revision++; clearInterval(this.timer); cancelTextFlush(this);

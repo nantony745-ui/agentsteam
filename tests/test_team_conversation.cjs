@@ -23,6 +23,45 @@ function setup() {
   return env;
 }
 
+test('团队输入框只有一个操作按钮，发送后切停止，取消后恢复发送并保留草稿', async () => {
+  const env = setup();
+  await env.run(`(async()=>{
+    globalThis.calls=[];globalThis.originalButton=first.sendButton;
+    api=async path=>{calls.push(path);return path.endsWith('/messages')?{run_id:'active',status:'queued'}:{id:'active',status:'canceled'};};
+    first.update();first.input.value='开始';await first.sendButton.listeners.click[0]();
+  })()`);
+  assert.equal(env.run('first.root.querySelectorAll(".composer-actions button").length'), 1);
+  assert.equal(env.run('first.sendButton.textContent'), '■');
+  assert.equal(env.run('first.sendButton.getAttribute("aria-label")'), '停止本轮');
+  await env.run(`first.input.value='保留下一条草稿';first.sendButton.listeners.click[0]()`);
+  assert.equal(env.run('first.sendButton===originalButton'), true);
+  assert.equal(env.run('first.sendButton.textContent'), '↑');
+  assert.equal(env.run('first.sendButton.disabled'), false);
+  assert.equal(env.run('first.input.value'), '保留下一条草稿');
+  assert.equal(env.run('calls.join(",")'), '/api/sessions/one/messages,/api/runs/active/cancel');
+});
+
+test('停止中禁止重复点击，失败可重试，迟到取消响应不覆盖已完成状态', async () => {
+  const env = setup();
+  env.run(`first.ensureRun('active',{status:'running'});first.update();api=async()=>{throw Error('offline');};`);
+  await env.run('first.sendButton.listeners.click[0]()');
+  assert.equal(env.run('first.sendButton.disabled'), false);
+  assert.match(env.run('first.error.textContent'), /offline/);
+  await env.run(`(async()=>{
+    globalThis.cancelCalls=0;
+    api=path=>path.endsWith('/cancel')?new Promise(resolve=>{cancelCalls++;globalThis.finishCancel=resolve;}):Promise.resolve({files:[]});
+    globalThis.stopping=first.stop();await first.stop();
+  })()`);
+  assert.equal(env.run('cancelCalls'), 1);
+  assert.equal(env.run('first.sendButton.disabled'), true);
+  assert.equal(env.run('first.sendButton.title'), '正在停止');
+  await env.run(`first.apply({id:1,session_id:'one',run_id:'active',kind:'run.status',payload:{status:'completed'}})`);
+  await env.run(`finishCancel({id:'active',status:'cancel_requested'});stopping`);
+  assert.equal(env.run('first.runs.get("active").record.status'), 'completed');
+  assert.equal(env.run('first.sendButton.textContent'), '↑');
+  assert.equal(env.run('first.sendButton.disabled'), false);
+});
+
 test('团队窗持久化实际模型，重开无需发送，较旧历史与其他会话事件不覆盖', async () => {
   const env = setup();
   await env.run(`first.apply({id:20,session_id:'one',kind:'session.model',payload:{model_id:'actual-model'}})`);

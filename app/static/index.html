@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Agentsteam 工作台</title>
-  <link rel="stylesheet" href="/style.css?v=20261031.1">
+  <link rel="stylesheet" href="/style.css?v=20261031.2">
   <script src="/harness-preview.js?v=20261020.1" defer></script>
   <script src="/skills.js?v=20261020.3" defer></script>
   <script src="/mcp.js?v=20261020.1" defer></script>
@@ -21,7 +21,7 @@
   <link rel="stylesheet" href="/employees.css?v=20261023.3">
   <link rel="stylesheet" href="/teams.css?v=20261031.1">
   <script src="/teams.js?v=20261022.2" defer></script>
-  <script src="/team-conversation.js?v=20261031.1" defer></script>
+  <script src="/team-conversation.js?v=20261031.2" defer></script>
   <script src="/team-workspace.js?v=20261025.1" defer></script>
 </head>
 <body>
@@ -70,7 +70,7 @@
         <div class="composer">
           <label for="message-input" class="sr-only">消息输入</label>
           <textarea id="message-input" rows="2" placeholder="发送消息…" disabled></textarea>
-          <div class="composer-toolbar"><div id="agent-choice" class="agent-choice" hidden><label class="sr-only" for="harness">使用 Agent</label><select id="harness" name="harness"><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="codebuddy">CodeBuddy</option><option value="deepseek">DeepSeek</option></select></div><span id="composer-agent" class="composer-agent">未选择 Agent</span><span class="shortcut-hint">Ctrl / ⌘ + Enter 发送</span><button type="submit" id="send-button" class="send-button" aria-label="发送消息" title="发送消息" disabled><svg id="send-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 14-7-5 14-3-6-6-1Z"/><path d="m11 13 8-8"/></svg><svg id="pause-icon" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M8 5v14M16 5v14" stroke-width="3"/></svg></button></div>
+          <div class="composer-toolbar"><div id="agent-choice" class="agent-choice" hidden><label class="sr-only" for="harness">使用 Agent</label><select id="harness" name="harness"><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="codebuddy">CodeBuddy</option><option value="deepseek">DeepSeek</option></select></div><span id="composer-agent" class="composer-agent">未选择 Agent</span><span class="shortcut-hint">Ctrl / ⌘ + Enter 发送</span><button type="submit" id="send-button" class="send-button" aria-label="发送消息" title="发送消息" disabled><svg id="send-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 14-7-5 14-3-6-6-1Z"/><path d="m11 13 8-8"/></svg><svg id="pause-icon" viewBox="0 0 24 24" aria-hidden="true" hidden><rect x="7" y="7" width="10" height="10" rx="1" fill="currentColor" stroke="none"/></svg></button></div>
         </div>
         <div class="message-actions"><button type="button" id="retry-button" hidden>重试原消息</button><button type="button" id="discard-button" hidden>放弃本地重试</button></div>
         <p id="message-error" class="form-error" role="alert"></p>

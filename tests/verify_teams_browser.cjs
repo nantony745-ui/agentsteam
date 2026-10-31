@@ -167,7 +167,8 @@ async function run() {
       return (await response.json()).ok;
     });
     await until(()=>evaluate("[...document.querySelectorAll('.team-pane')].every((pane,i)=>pane.textContent.includes('窗口隔离证据 '+i))"));
-    assert.equal(await evaluate("[...document.querySelectorAll('.team-pane')].every(pane=>{const stop=pane.querySelector('.composer-stop'),send=pane.querySelector('.send-button');return !stop.hidden && stop.parentElement===send.parentElement && stop.getBoundingClientRect().right<=send.getBoundingClientRect().left;})"),true);
+    assert.equal(await evaluate("[...document.querySelectorAll('.team-pane')].every(pane=>{const button=pane.querySelector('.send-button');return pane.querySelectorAll('.composer-actions button').length===1 && button.textContent==='■' && button.title==='停止本轮';})"),true);
+    results.push({view:'single-stop-button',screenshot:await screenshot('single-stop-button')});
     assert.equal(await evaluate("document.querySelectorAll('.team-pane')[0].textContent.includes('窗口隔离证据 1')"),false);
     assert.equal(await evaluate("document.querySelectorAll('.team-pane')[1].textContent.includes('窗口隔离证据 2')"),false);
     assert.equal(await evaluate("[...document.querySelectorAll('.team-pane')].every(pane=>pane.querySelectorAll('.tool-card').length===1)"),true);
@@ -179,6 +180,7 @@ async function run() {
     await until(()=>evaluate("document.querySelectorAll('.team-pane')[1].querySelector('.permission-card').textContent.includes('已回答')"));
     await evaluate("document.querySelectorAll('.team-pane')[2].querySelector('button[title=\"停止本轮\"]').click()");
     await until(async()=>['canceled','completed'].includes((await(await fetch(base+`/api/sessions/${sessionIds[2]}`)).json()).runs.at(-1).status));
+    await until(()=>evaluate("document.querySelectorAll('.team-pane')[2].querySelector('.send-button').textContent==='↑'"));
     assert.equal((await(await fetch(base+`/api/runs/${first.run_id}`)).json()).status,'running');
     await evaluate("window.fixtureSources.at(-1).dispatchEvent(new Event('error'))");
     await until(()=>evaluate("document.querySelector('#team-workspace-status').textContent.includes('连接中断')"));
